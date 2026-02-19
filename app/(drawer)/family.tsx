@@ -7,7 +7,7 @@ import type { FamilyMember } from "../../src/types/family";
 import { IconButton, Pill, PrimaryButton } from "../../src/ui/components";
 
 export default function FamilyScreen() {
-  const { colors } = useAppTheme();
+  const { colors, theme } = useAppTheme();
 
   const [items, setItems] = React.useState<FamilyMember[]>([]);
   const [open, setOpen] = React.useState(false);
@@ -132,7 +132,7 @@ export default function FamilyScreen() {
       )}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: theme === "dark" ? "rgba(0,0,0,0.55)" : "rgba(15,23,42,0.35)" }]}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
@@ -149,7 +149,7 @@ export default function FamilyScreen() {
               onChangeText={setName}
               placeholder="Например: Алина"
               placeholderTextColor="rgba(120,120,120,0.55)"
-              style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
             />
 
             <Text style={[styles.label, { color: colors.faint, marginTop: 12 }]}>Кем приходится</Text>
@@ -158,7 +158,7 @@ export default function FamilyScreen() {
               onChangeText={setRelation}
               placeholder="Например: мама"
               placeholderTextColor="rgba(120,120,120,0.55)"
-              style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
             />
 
             <View style={{ height: 14 }} />
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: "900" },
   emptyText: { marginTop: 6, lineHeight: 20 },
 
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", padding: 16, justifyContent: "center" },
+  modalBackdrop: { flex: 1, padding: 16, justifyContent: "center" },
   modalCard: { borderRadius: 18, padding: 14, borderWidth: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   modalTitle: { fontSize: 16, fontWeight: "900" },
@@ -195,6 +195,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 11,
     fontSize: 15,
-    backgroundColor: "rgba(255,255,255,0.03)",
   },
 });

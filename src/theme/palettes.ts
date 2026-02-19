@@ -3,16 +3,20 @@ export type AppTheme = "dark" | "light";
 export function getPalette(theme: AppTheme) {
   if (theme === "light") {
     return {
-      bg: "#F6F7FB",
+      bg: "#F3F6FB",
       card: "#FFFFFF",
-      card2: "#FFFFFF",
-      text: "#0B1220",
-      muted: "rgba(11,18,32,0.7)",
-      faint: "rgba(11,18,32,0.5)",
-      border: "rgba(11,18,32,0.08)",
-      primary: "#6D28D9",
+      card2: "#F9FBFF",
+      text: "#0F172A",
+      muted: "rgba(15,23,42,0.68)",
+      faint: "rgba(15,23,42,0.5)",
+      border: "rgba(15,23,42,0.12)",
+      primary: "#0F766E",
       danger: "#DC2626",
       success: "#16A34A",
+      surface: "rgba(15,23,42,0.04)",
+      surfaceStrong: "rgba(15,23,42,0.07)",
+      primarySoft: "rgba(15,118,110,0.14)",
+      dangerSoft: "rgba(220,38,38,0.1)",
     };
   }
 
@@ -24,8 +28,12 @@ export function getPalette(theme: AppTheme) {
     muted: "rgba(232,238,246,0.7)",
     faint: "rgba(232,238,246,0.45)",
     border: "rgba(255,255,255,0.08)",
-    primary: "#7C3AED",
+    primary: "#14B8A6",
     danger: "#EF4444",
     success: "#22C55E",
+    surface: "rgba(255,255,255,0.04)",
+    surfaceStrong: "rgba(255,255,255,0.08)",
+    primarySoft: "rgba(20,184,166,0.2)",
+    dangerSoft: "rgba(239,68,68,0.14)",
   };
 }

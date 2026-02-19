@@ -19,8 +19,8 @@ export default function SettingsScreen() {
           style={({ pressed }) => [
             styles.option,
             {
-              borderColor: theme === "dark" ? "rgba(124,58,237,0.35)" : colors.border,
-              backgroundColor: theme === "dark" ? "rgba(124,58,237,0.14)" : "rgba(255,255,255,0.03)",
+              borderColor: theme === "dark" ? colors.primary : colors.border,
+              backgroundColor: theme === "dark" ? colors.primarySoft : colors.surface,
             },
             pressed && { opacity: 0.9 },
           ]}
@@ -37,8 +37,8 @@ export default function SettingsScreen() {
           style={({ pressed }) => [
             styles.option,
             {
-              borderColor: theme === "light" ? "rgba(124,58,237,0.35)" : colors.border,
-              backgroundColor: theme === "light" ? "rgba(124,58,237,0.14)" : "rgba(255,255,255,0.03)",
+              borderColor: theme === "light" ? colors.primary : colors.border,
+              backgroundColor: theme === "light" ? colors.primarySoft : colors.surface,
             },
             pressed && { opacity: 0.9 },
           ]}

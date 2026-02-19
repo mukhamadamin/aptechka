@@ -9,7 +9,7 @@ export function PrimaryButton(props: {
   disabled?: boolean;
   loading?: boolean;
 }) {
-  const { colors } = useAppTheme();
+  const { colors, theme } = useAppTheme();
   const { title, onPress, disabled, loading } = props;
 
   return (
@@ -20,7 +20,7 @@ export function PrimaryButton(props: {
         styles.btn,
         { backgroundColor: colors.primary },
         (disabled || loading) && { opacity: 0.55 },
-        pressed && { transform: [{ scale: 0.985 }] },
+        pressed && { transform: [{ scale: 0.985 }], opacity: theme === "dark" ? 0.95 : 0.9 },
       ]}
     >
       {loading ? (
@@ -46,7 +46,7 @@ export function GhostButton(props: {
       disabled={disabled}
       style={({ pressed }) => [
         styles.ghost,
-        { borderColor: colors.border },
+        { borderColor: colors.border, backgroundColor: colors.surface },
         disabled && { opacity: 0.55 },
         pressed && { opacity: 0.88 },
       ]}
@@ -70,10 +70,8 @@ export function IconButton(props: {
       style={({ pressed }) => [
         styles.iconBtn,
         {
-          borderColor:
-            tone === "danger" ? "rgba(239,68,68,0.28)" : colors.border,
-          backgroundColor:
-            tone === "danger" ? "rgba(239,68,68,0.06)" : "rgba(255,255,255,0.03)",
+          borderColor: tone === "danger" ? colors.dangerSoft : colors.border,
+          backgroundColor: tone === "danger" ? colors.dangerSoft : colors.surface,
         },
         pressed && { opacity: 0.85 },
       ]}
@@ -93,17 +91,17 @@ export function Pill(props: { label: string; tone?: "default" | "danger" | "mute
 
   const bg =
     tone === "danger"
-      ? "rgba(239,68,68,0.08)"
+      ? colors.dangerSoft
       : tone === "muted"
-        ? "rgba(255,255,255,0.03)"
-        : "rgba(124,58,237,0.14)";
+        ? colors.surface
+        : colors.primarySoft;
 
   const border =
     tone === "danger"
-      ? "rgba(239,68,68,0.22)"
+      ? colors.dangerSoft
       : tone === "muted"
         ? colors.border
-        : "rgba(124,58,237,0.22)";
+        : colors.primarySoft;
 
   const text = tone === "muted" ? colors.muted : colors.text;
 
@@ -133,7 +131,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    backgroundColor: "rgba(255,255,255,0.03)",
   },
   ghostText: { fontSize: 15, fontWeight: "800", letterSpacing: 0.1 },
 

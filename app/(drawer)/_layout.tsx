@@ -16,7 +16,14 @@ export default function DrawerLayout() {
         drawerStyle: { backgroundColor: colors.card },
         drawerActiveTintColor: colors.text,
         drawerInactiveTintColor: colors.muted,
-        drawerActiveBackgroundColor: "rgba(124,58,237,0.14)",
+        drawerActiveBackgroundColor: colors.primarySoft,
+        drawerItemStyle: {
+          borderRadius: 10,
+          marginHorizontal: 8,
+        },
+        sceneStyle: {
+          backgroundColor: colors.bg,
+        },
       }}
     >
       <Drawer.Screen

@@ -24,9 +24,9 @@ import {
   updateMedicine,
   validateForm,
 } from "../../../src/storage/medicines";
+import { useAppTheme } from "../../../src/theme/ThemeProvider";
 import type { MedicineForm } from "../../../src/types/medicine";
 import { GhostButton, PrimaryButton } from "../../../src/ui/components";
-import { colors, radius, shadow } from "../../../src/ui/theme";
 
 const emptyForm: MedicineForm = {
   name: "",
@@ -49,6 +49,7 @@ function formatDateLocal(iso?: string) {
 
 export default function UpsertMedicine() {
   const router = useRouter();
+  const { colors, theme } = useAppTheme();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params?.id;
 
@@ -85,7 +86,7 @@ export default function UpsertMedicine() {
     })();
   }, [id, router]);
 
-  const setField = (key: keyof MedicineForm, value: any) => {
+  const setField = <K extends keyof MedicineForm>(key: K, value: MedicineForm[K]) => {
     setForm((p) => ({ ...p, [key]: value }));
   };
 
@@ -148,11 +149,23 @@ export default function UpsertMedicine() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView
+      style={[styles.screen, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
-          <Text style={styles.h1}>{id ? "Редактирование лекарства" : "Новое лекарство"}</Text>
-          <Text style={styles.h2}>
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              shadowColor: theme === "dark" ? "#000" : "#0F172A",
+            },
+          ]}
+        >
+          <Text style={[styles.h1, { color: colors.text }]}>{id ? "Редактирование лекарства" : "Новое лекарство"}</Text>
+          <Text style={[styles.h2, { color: colors.muted }]}>
             Добавьте срок годности и выберите, за сколько дней прислать напоминание.
           </Text>
 
@@ -162,6 +175,8 @@ export default function UpsertMedicine() {
             placeholder="Например: Парацетамол"
             onChangeText={(v) => setField("name", v)}
             autoFocus={!id}
+            colors={colors}
+            theme={theme}
           />
 
           <View style={styles.grid}>
@@ -171,6 +186,8 @@ export default function UpsertMedicine() {
                 value={form.dosage ?? ""}
                 placeholder="Например: 500 мг"
                 onChangeText={(v) => setField("dosage", v)}
+                colors={colors}
+                theme={theme}
               />
             </View>
             <View style={{ width: 12 }} />
@@ -180,35 +197,51 @@ export default function UpsertMedicine() {
                 value={form.quantity ?? ""}
                 placeholder="Например: 20 табл"
                 onChangeText={(v) => setField("quantity", v)}
+                colors={colors}
+                theme={theme}
               />
             </View>
           </View>
 
           {/* Срок годности */}
           <View style={{ marginTop: 14 }}>
-            <Text style={styles.label}>Срок годности</Text>
+            <Text style={[styles.label, { color: colors.faint }]}>Срок годности</Text>
 
             <Pressable
               onPress={() => setShowPicker(true)}
-              style={({ pressed }) => [styles.selectBox, pressed && { opacity: 0.9 }]}
+              style={({ pressed }) => [
+                styles.selectBox,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+                pressed && { opacity: 0.9 },
+              ]}
             >
-              <Text style={styles.selectText}>{formatDateLocal(form.expiresAt)}</Text>
-              <Text style={styles.selectHint}>Нажмите, чтобы выбрать дату</Text>
+              <Text style={[styles.selectText, { color: colors.text }]}>{formatDateLocal(form.expiresAt)}</Text>
+              <Text style={[styles.selectHint, { color: colors.muted }]}>Нажмите, чтобы выбрать дату</Text>
             </Pressable>
 
             <View style={{ height: 10 }} />
 
             <Pressable
               onPress={() => setField("expiresAt", undefined)}
-              style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.9 }]}
+              style={({ pressed }) => [
+                styles.clearBtn,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+                pressed && { opacity: 0.9 },
+              ]}
             >
-              <Text style={styles.clearText}>Сбросить срок годности</Text>
+              <Text style={[styles.clearText, { color: colors.text }]}>Сбросить срок годности</Text>
             </Pressable>
           </View>
 
           {/* За сколько дней напомнить */}
           <View style={{ marginTop: 14 }}>
-            <Text style={styles.label}>Напомнить за (дней)</Text>
+            <Text style={[styles.label, { color: colors.faint }]}>Напомнить за (дней)</Text>
             <TextInput
               value={String(form.remindDaysBefore ?? 7)}
               onChangeText={(v) => {
@@ -217,8 +250,15 @@ export default function UpsertMedicine() {
               }}
               keyboardType="number-pad"
               placeholder="Например: 7"
-              placeholderTextColor="rgba(232,238,246,0.35)"
-              style={styles.input}
+              placeholderTextColor={theme === "dark" ? "rgba(232,238,246,0.35)" : "rgba(15,23,42,0.4)"}
+              style={[
+                styles.input,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface,
+                },
+              ]}
             />
           </View>
 
@@ -229,6 +269,8 @@ export default function UpsertMedicine() {
             onChangeText={(v) => setField("notes", v)}
             multiline
             minHeight={110}
+            colors={colors}
+            theme={theme}
           />
 
           <View style={{ height: 14 }} />
@@ -269,19 +311,26 @@ function Field(props: {
   autoFocus?: boolean;
   multiline?: boolean;
   minHeight?: number;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  theme: ReturnType<typeof useAppTheme>["theme"];
 }) {
-  const { label, value, placeholder, onChangeText, autoFocus, multiline, minHeight } = props;
+  const { label, value, placeholder, onChangeText, autoFocus, multiline, minHeight, colors, theme } = props;
   return (
     <View style={{ marginTop: 14 }}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: colors.faint }]}>{label}</Text>
       <TextInput
         value={value}
         placeholder={placeholder}
-        placeholderTextColor="rgba(232,238,246,0.35)"
+        placeholderTextColor={theme === "dark" ? "rgba(232,238,246,0.35)" : "rgba(15,23,42,0.4)"}
         onChangeText={onChangeText}
         autoFocus={autoFocus}
         style={[
           styles.input,
+          {
+            color: colors.text,
+            borderColor: colors.border,
+            backgroundColor: colors.surface,
+          },
           multiline && { height: minHeight ?? 110, paddingTop: 12, textAlignVertical: "top" },
         ]}
         multiline={multiline}
@@ -293,51 +342,46 @@ function Field(props: {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
   container: { padding: 16, paddingTop: 12, paddingBottom: 28 },
   card: {
-    backgroundColor: colors.card,
-    borderRadius: radius.xl,
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.card,
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
-  h1: { color: colors.text, fontSize: 20, fontWeight: "900" },
-  h2: { color: colors.muted, marginTop: 8, lineHeight: 20 },
+  h1: { fontSize: 20, fontWeight: "900" },
+  h2: { marginTop: 8, lineHeight: 20 },
 
   grid: { flexDirection: "row", marginTop: 2 },
 
-  label: { color: colors.faint, fontSize: 13, fontWeight: "800", marginBottom: 8 },
+  label: { fontSize: 13, fontWeight: "800", marginBottom: 8 },
   input: {
-    backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    color: colors.text,
     fontSize: 15,
   },
 
   selectBox: {
-    backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
-  selectText: { color: colors.text, fontSize: 15, fontWeight: "800" },
-  selectHint: { color: colors.muted, marginTop: 6, fontSize: 12, fontWeight: "600" },
+  selectText: { fontSize: 15, fontWeight: "800" },
+  selectHint: { marginTop: 6, fontSize: 12, fontWeight: "600" },
 
   clearBtn: {
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: radius.md,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(255,255,255,0.03)",
   },
-  clearText: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  clearText: { fontSize: 13, fontWeight: "700" },
 });

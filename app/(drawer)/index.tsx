@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import * as React from "react";
 import {
   Alert,
@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { cancelNotificationIds } from "../../src/notifications/notifications";
 import { loadMedicines, saveMedicines } from "../../src/storage/medicines";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
@@ -38,6 +39,16 @@ function formatExpiry(expiresAt?: string) {
   return `${dd}.${mm}.${yyyy}`;
 }
 
+type FilterMode = "all" | "expiring" | "expired" | "noExpiry" | "withNotes";
+
+const FILTER_LABELS: Record<FilterMode, string> = {
+  all: "Все",
+  expiring: "Истекают (<= 7 дней)",
+  expired: "Просроченные",
+  noExpiry: "Без срока",
+  withNotes: "С примечанием",
+};
+
 export default function HomeScreen() {
   const router = useRouter();
   const { colors } = useAppTheme();
@@ -46,6 +57,8 @@ export default function HomeScreen() {
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [filterMode, setFilterMode] = React.useState<FilterMode>("all");
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
   const fetchData = React.useCallback(async () => {
@@ -62,6 +75,19 @@ export default function HomeScreen() {
       }
     })();
   }, [fetchData]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let active = true;
+      (async () => {
+        const list = await loadMedicines();
+        if (active) setItems(list);
+      })();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -92,14 +118,25 @@ export default function HomeScreen() {
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items;
+
     return items.filter((x) => {
       const a = (x.name ?? "").toLowerCase();
       const b = (x.dosage ?? "").toLowerCase();
       const c = (x.notes ?? "").toLowerCase();
-      return a.includes(q) || b.includes(q) || c.includes(q);
+      const queryMatch = !q || a.includes(q) || b.includes(q) || c.includes(q);
+      if (!queryMatch) return false;
+
+      if (filterMode === "all") return true;
+
+      const left = daysLeft(x.expiresAt);
+      if (filterMode === "expiring") return left !== null && left >= 0 && left <= 7;
+      if (filterMode === "expired") return left !== null && left < 0;
+      if (filterMode === "noExpiry") return left === null;
+      if (filterMode === "withNotes") return Boolean((x.notes ?? "").trim());
+
+      return true;
     });
-  }, [items, query]);
+  }, [items, query, filterMode]);
 
   const renderItem = ({ item }: { item: Medicine }) => {
     const isOpen = expandedId === item.id;
@@ -193,18 +230,61 @@ export default function HomeScreen() {
           Быстрый список. Детали открываются по нажатию.
         </Text>
 
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Поиск по названию, дозировке, заметкам"
-          placeholderTextColor="rgba(120,120,120,0.55)"
-          style={[
-            styles.search,
-            { color: colors.text, borderColor: colors.border, backgroundColor: "rgba(255,255,255,0.03)" },
-          ]}
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
+        <View style={styles.searchRow}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Поиск по названию, дозировке, заметкам"
+            placeholderTextColor="rgba(120,120,120,0.55)"
+            style={[
+              styles.search,
+              { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface },
+            ]}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+
+          <Pressable
+            onPress={() => setFiltersOpen((v) => !v)}
+            style={({ pressed }) => [
+              styles.filterBtn,
+              {
+                borderColor: filterMode === "all" ? colors.border : colors.primary,
+                backgroundColor: filterMode === "all" ? colors.surface : colors.primarySoft,
+              },
+              pressed && { opacity: 0.9 },
+            ]}
+          >
+            <Ionicons name="options-outline" size={16} color={colors.text} />
+            <Text style={[styles.filterBtnText, { color: colors.text }]}>Фильтр</Text>
+          </Pressable>
+        </View>
+
+        {filtersOpen ? (
+          <View style={styles.filtersWrap}>
+            {(Object.keys(FILTER_LABELS) as FilterMode[]).map((mode) => {
+              const active = mode === filterMode;
+              return (
+                <Pressable
+                  key={mode}
+                  onPress={() => setFilterMode(mode)}
+                  style={({ pressed }) => [
+                    styles.filterChip,
+                    {
+                      borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active ? colors.primarySoft : colors.surface,
+                    },
+                    pressed && { opacity: 0.88 },
+                  ]}
+                >
+                  <Text style={[styles.filterChipText, { color: colors.text }]}>
+                    {FILTER_LABELS[mode]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         <View style={{ height: 12 }} />
         <PrimaryButton title="Добавить лекарство" onPress={() => router.push("/medicine/new")} />
@@ -223,7 +303,9 @@ export default function HomeScreen() {
             {query.trim() ? "Ничего не найдено" : "Список пуст"}
           </Text>
           <Text style={[styles.emptyText, { color: colors.muted }]}>
-            {query.trim() ? "Измените запрос." : "Добавьте первое лекарство."}
+            {query.trim() || filterMode !== "all"
+              ? "Измените запрос или фильтр."
+              : "Добавьте первое лекарство."}
           </Text>
         </View>
       ) : (
@@ -232,7 +314,15 @@ export default function HomeScreen() {
           keyExtractor={(x) => x.id}
           renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              progressBackgroundColor={colors.card}
+            />
+          }
         />
       )}
     </View>
@@ -250,13 +340,48 @@ const styles = StyleSheet.create({
   h1: { fontSize: 20, fontWeight: "900" },
   h2: { marginTop: 6, lineHeight: 20 },
 
-  search: {
+  searchRow: {
     marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  search: {
+    flex: 1,
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 11,
     fontSize: 15,
+  },
+  filterBtn: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  filterBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  filtersWrap: {
+    marginTop: 8,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "800",
   },
 
   card: {
