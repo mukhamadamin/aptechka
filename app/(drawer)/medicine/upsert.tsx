@@ -13,17 +13,20 @@ import {
   View,
 } from "react-native";
 import {
+  getMedicineById,
+  saveMedicine,
+} from "../../../src/entities/medicine/api/medicine-repository";
+import {
+  createMedicine,
+  normalizeMedicineForm,
+  updateMedicine,
+  validateMedicineForm,
+} from "../../../src/entities/medicine/model/medicine";
+import { useHousehold } from "../../../src/entities/session/model/use-household";
+import {
   cancelNotificationIds,
   scheduleMedicineNotifications,
 } from "../../../src/notifications/notifications";
-import {
-  createMedicine,
-  loadMedicines,
-  normalizeForm,
-  saveMedicines,
-  updateMedicine,
-  validateForm,
-} from "../../../src/storage/medicines";
 import { useAppTheme } from "../../../src/theme/ThemeProvider";
 import type { MedicineForm } from "../../../src/types/medicine";
 import { GhostButton, PrimaryButton } from "../../../src/ui/components";
@@ -38,9 +41,9 @@ const emptyForm: MedicineForm = {
 };
 
 function formatDateLocal(iso?: string) {
-  if (!iso) return "Не указан";
+  if (!iso) return "Not set";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "Не указан";
+  if (Number.isNaN(d.getTime())) return "Not set";
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
@@ -50,28 +53,28 @@ function formatDateLocal(iso?: string) {
 export default function UpsertMedicine() {
   const router = useRouter();
   const { colors, theme } = useAppTheme();
+  const { householdId } = useHousehold();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params?.id;
 
   const [form, setForm] = React.useState<MedicineForm>(emptyForm);
   const [saving, setSaving] = React.useState(false);
   const [initialLoading, setInitialLoading] = React.useState(!!id);
-
   const [showPicker, setShowPicker] = React.useState(false);
 
   React.useEffect(() => {
-    if (!id) return;
+    if (!id || !householdId) return;
 
     (async () => {
       try {
-        const list = await loadMedicines();
-        const found = list.find((x) => x.id === id);
+        const found = await getMedicineById(householdId, id);
         if (!found) {
-          Alert.alert("Не найдено", "Лекарство не найдено или было удалено.", [
-            { text: "Ок", onPress: () => router.back() },
+          Alert.alert("Not found", "Medicine was not found or has been deleted.", [
+            { text: "OK", onPress: () => router.back() },
           ]);
           return;
         }
+
         setForm({
           name: found.name,
           dosage: found.dosage ?? "",
@@ -84,57 +87,51 @@ export default function UpsertMedicine() {
         setInitialLoading(false);
       }
     })();
-  }, [id, router]);
+  }, [householdId, id, router]);
 
   const setField = <K extends keyof MedicineForm>(key: K, value: MedicineForm[K]) => {
-    setForm((p) => ({ ...p, [key]: value }));
+    setForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const onSave = async () => {
-    const cleaned = normalizeForm(form);
-    const err = validateForm(cleaned);
-    if (err) {
-      Alert.alert("Проверьте данные", err);
+    if (!householdId) {
+      Alert.alert("No household", "Join a household first in Settings.");
+      return;
+    }
+
+    const cleaned = normalizeMedicineForm(form);
+    const errorMessage = validateMedicineForm(cleaned);
+    if (errorMessage) {
+      Alert.alert("Check your input", errorMessage);
       return;
     }
 
     setSaving(true);
     try {
-      const list = await loadMedicines();
-
-      // CREATE
       if (!id) {
         const created = createMedicine(cleaned);
+        const notificationIds = await scheduleMedicineNotifications(created);
+        created.notificationIds = notificationIds;
 
-        // планируем уведомления (если expiresAt задан)
-        const notifIds = await scheduleMedicineNotifications(created);
-        created.notificationIds = notifIds;
-
-        await saveMedicines([created, ...list]);
+        await saveMedicine(householdId, created);
         router.back();
         return;
       }
 
-      // UPDATE
-      const idx = list.findIndex((x) => x.id === id);
-      if (idx === -1) {
-        Alert.alert("Не найдено", "Лекарство не найдено или было удалено.");
+      const previous = await getMedicineById(householdId, id);
+      if (!previous) {
+        Alert.alert("Not found", "Medicine was not found or has been deleted.");
         router.back();
         return;
       }
 
-      const prev = list[idx];
-      // отменяем старые уведомления
-      await cancelNotificationIds(prev.notificationIds);
+      await cancelNotificationIds(previous.notificationIds);
 
-      const updated = updateMedicine(prev, cleaned);
-      // планируем новые
-      const notifIds = await scheduleMedicineNotifications(updated);
-      updated.notificationIds = notifIds;
+      const updated = updateMedicine(previous, cleaned);
+      const notificationIds = await scheduleMedicineNotifications(updated);
+      updated.notificationIds = notificationIds;
 
-      const next = [...list];
-      next[idx] = updated;
-      await saveMedicines(next);
+      await saveMedicine(householdId, updated);
       router.back();
     } finally {
       setSaving(false);
@@ -142,10 +139,9 @@ export default function UpsertMedicine() {
   };
 
   const pickDate = (date: Date) => {
-    // ставим 00:00:00, чтобы срок был по дню
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    setField("expiresAt", d.toISOString());
+    const normalizedDate = new Date(date);
+    normalizedDate.setHours(0, 0, 0, 0);
+    setField("expiresAt", normalizedDate.toISOString());
   };
 
   return (
@@ -164,16 +160,14 @@ export default function UpsertMedicine() {
             },
           ]}
         >
-          <Text style={[styles.h1, { color: colors.text }]}>{id ? "Редактирование лекарства" : "Новое лекарство"}</Text>
-          <Text style={[styles.h2, { color: colors.muted }]}>
-            Добавьте срок годности и выберите, за сколько дней прислать напоминание.
-          </Text>
+          <Text style={[styles.h1, { color: colors.text }]}>{id ? "Edit Medicine" : "New Medicine"}</Text>
+          <Text style={[styles.h2, { color: colors.muted }]}>This medicine will be shared with all household members.</Text>
 
           <Field
-            label="Название"
+            label="Name"
             value={form.name}
-            placeholder="Например: Парацетамол"
-            onChangeText={(v) => setField("name", v)}
+            placeholder="For example: Paracetamol"
+            onChangeText={(value) => setField("name", value)}
             autoFocus={!id}
             colors={colors}
             theme={theme}
@@ -182,10 +176,10 @@ export default function UpsertMedicine() {
           <View style={styles.grid}>
             <View style={{ flex: 1 }}>
               <Field
-                label="Дозировка"
+                label="Dosage"
                 value={form.dosage ?? ""}
-                placeholder="Например: 500 мг"
-                onChangeText={(v) => setField("dosage", v)}
+                placeholder="For example: 500 mg"
+                onChangeText={(value) => setField("dosage", value)}
                 colors={colors}
                 theme={theme}
               />
@@ -193,19 +187,18 @@ export default function UpsertMedicine() {
             <View style={{ width: 12 }} />
             <View style={{ flex: 1 }}>
               <Field
-                label="Количество"
+                label="Quantity"
                 value={form.quantity ?? ""}
-                placeholder="Например: 20 табл"
-                onChangeText={(v) => setField("quantity", v)}
+                placeholder="For example: 20 tabs"
+                onChangeText={(value) => setField("quantity", value)}
                 colors={colors}
                 theme={theme}
               />
             </View>
           </View>
 
-          {/* Срок годности */}
           <View style={{ marginTop: 14 }}>
-            <Text style={[styles.label, { color: colors.faint }]}>Срок годности</Text>
+            <Text style={[styles.label, { color: colors.faint }]}>Expiry date</Text>
 
             <Pressable
               onPress={() => setShowPicker(true)}
@@ -219,7 +212,7 @@ export default function UpsertMedicine() {
               ]}
             >
               <Text style={[styles.selectText, { color: colors.text }]}>{formatDateLocal(form.expiresAt)}</Text>
-              <Text style={[styles.selectHint, { color: colors.muted }]}>Нажмите, чтобы выбрать дату</Text>
+              <Text style={[styles.selectHint, { color: colors.muted }]}>Tap to choose date</Text>
             </Pressable>
 
             <View style={{ height: 10 }} />
@@ -235,21 +228,20 @@ export default function UpsertMedicine() {
                 pressed && { opacity: 0.9 },
               ]}
             >
-              <Text style={[styles.clearText, { color: colors.text }]}>Сбросить срок годности</Text>
+              <Text style={[styles.clearText, { color: colors.text }]}>Clear expiry date</Text>
             </Pressable>
           </View>
 
-          {/* За сколько дней напомнить */}
           <View style={{ marginTop: 14 }}>
-            <Text style={[styles.label, { color: colors.faint }]}>Напомнить за (дней)</Text>
+            <Text style={[styles.label, { color: colors.faint }]}>Remind before (days)</Text>
             <TextInput
               value={String(form.remindDaysBefore ?? 7)}
-              onChangeText={(v) => {
-                const n = Number(v.replace(/[^\d]/g, ""));
-                setField("remindDaysBefore", Number.isFinite(n) ? n : 7);
+              onChangeText={(value) => {
+                const numericValue = Number(value.replace(/[^\d]/g, ""));
+                setField("remindDaysBefore", Number.isFinite(numericValue) ? numericValue : 7);
               }}
               keyboardType="number-pad"
-              placeholder="Например: 7"
+              placeholder="For example: 7"
               placeholderTextColor={theme === "dark" ? "rgba(232,238,246,0.35)" : "rgba(15,23,42,0.4)"}
               style={[
                 styles.input,
@@ -263,10 +255,10 @@ export default function UpsertMedicine() {
           </View>
 
           <Field
-            label="Примечание"
+            label="Notes"
             value={form.notes ?? ""}
-            placeholder="Например: после еды"
-            onChangeText={(v) => setField("notes", v)}
+            placeholder="For example: after meal"
+            onChangeText={(value) => setField("notes", value)}
             multiline
             minHeight={110}
             colors={colors}
@@ -276,7 +268,7 @@ export default function UpsertMedicine() {
           <View style={{ height: 14 }} />
 
           <PrimaryButton
-            title={id ? "Сохранить изменения" : "Добавить"}
+            title={id ? "Save Changes" : "Add Medicine"}
             onPress={onSave}
             loading={saving}
             disabled={initialLoading}
@@ -284,7 +276,7 @@ export default function UpsertMedicine() {
 
           <View style={{ height: 10 }} />
 
-          <GhostButton title="Отмена" onPress={() => router.back()} />
+          <GhostButton title="Cancel" onPress={() => router.back()} />
         </View>
       </ScrollView>
 
@@ -307,7 +299,7 @@ function Field(props: {
   label: string;
   value: string;
   placeholder?: string;
-  onChangeText: (v: string) => void;
+  onChangeText: (value: string) => void;
   autoFocus?: boolean;
   multiline?: boolean;
   minHeight?: number;
@@ -315,6 +307,7 @@ function Field(props: {
   theme: ReturnType<typeof useAppTheme>["theme"];
 }) {
   const { label, value, placeholder, onChangeText, autoFocus, multiline, minHeight, colors, theme } = props;
+
   return (
     <View style={{ marginTop: 14 }}>
       <Text style={[styles.label, { color: colors.faint }]}>{label}</Text>
@@ -355,9 +348,7 @@ const styles = StyleSheet.create({
   },
   h1: { fontSize: 20, fontWeight: "900" },
   h2: { marginTop: 8, lineHeight: 20 },
-
   grid: { flexDirection: "row", marginTop: 2 },
-
   label: { fontSize: 13, fontWeight: "800", marginBottom: 8 },
   input: {
     borderWidth: 1,
@@ -366,7 +357,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
   },
-
   selectBox: {
     borderWidth: 1,
     borderRadius: 14,
@@ -375,7 +365,6 @@ const styles = StyleSheet.create({
   },
   selectText: { fontSize: 15, fontWeight: "800" },
   selectHint: { marginTop: 6, fontSize: 12, fontWeight: "600" },
-
   clearBtn: {
     alignSelf: "flex-start",
     paddingHorizontal: 10,

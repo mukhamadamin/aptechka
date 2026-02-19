@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Medicine, MedicineForm } from "../types/medicine";
 
-const KEY = "home_pharmacy_medicines_v2"; // NEW key
+const KEY = "home_pharmacy_medicines_v2";
 
 function safeTrim(v?: string) {
   const s = (v ?? "").trim();
@@ -39,7 +39,6 @@ export function normalizeForm(input: MedicineForm): MedicineForm {
     dosage: safeTrim(input.dosage),
     quantity: safeTrim(input.quantity),
     notes: safeTrim(input.notes),
-
     expiresAt: expiresISO,
     remindDaysBefore: remind,
   };
@@ -47,9 +46,8 @@ export function normalizeForm(input: MedicineForm): MedicineForm {
 
 export function validateForm(form: MedicineForm) {
   if (!form.name || form.name.trim().length < 2) {
-    return "Введите название (минимум 2 символа).";
+    return "Please enter a medicine name (at least 2 characters).";
   }
-  // expiresAt опционально, не валидируем жёстко
   return null;
 }
 

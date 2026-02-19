@@ -24,7 +24,7 @@ export async function ensureNotificationPermission() {
 export async function ensureAndroidChannel() {
   if (Platform.OS !== "android") return;
   await Notifications.setNotificationChannelAsync("expiry", {
-    name: "Срок годности",
+    name: "Expiry date",
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: "#7C3AED",
@@ -58,7 +58,6 @@ export async function scheduleMedicineNotifications(med: Medicine): Promise<stri
   const now = new Date();
   const ids: string[] = [];
 
-  // 1) За N дней
   const before = new Date(expires);
   before.setDate(before.getDate() - remindDays);
   const beforeAt = nextLocalNineAM(before);
@@ -66,27 +65,24 @@ export async function scheduleMedicineNotifications(med: Medicine): Promise<stri
   if (beforeAt.getTime() > now.getTime()) {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: "Срок годности скоро закончится",
-        body: `${med.name} — осталось ${remindDays} дн.`,
+        title: "Medicine is expiring soon",
+        body: `${med.name} - ${remindDays} day(s) left.`,
         sound: true,
       },
-      // ✅ ВАЖНО: объект-триггер
       trigger: { date: beforeAt, channelId: "expiry" } as Notifications.NotificationTriggerInput,
     });
     ids.push(id);
   }
 
-  // 2) В день срока
   const expAt = nextLocalNineAM(expires);
 
   if (expAt.getTime() > now.getTime()) {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: "Срок годности сегодня",
-        body: `${med.name} — проверьте препарат.`,
+        title: "Medicine expires today",
+        body: `${med.name} - please check this medicine.`,
         sound: true,
       },
-      // ✅ ВАЖНО: объект-триггер
       trigger: { date: expAt, channelId: "expiry" } as Notifications.NotificationTriggerInput,
     });
     ids.push(id);
@@ -97,7 +93,5 @@ export async function scheduleMedicineNotifications(med: Medicine): Promise<stri
 
 export async function cancelNotificationIds(ids?: string[]) {
   if (!ids?.length) return;
-  await Promise.allSettled(
-    ids.map((id) => Notifications.cancelScheduledNotificationAsync(id))
-  );
+  await Promise.allSettled(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id)));
 }

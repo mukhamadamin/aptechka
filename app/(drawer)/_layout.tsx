@@ -1,10 +1,33 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Redirect } from "expo-router";
 import { Drawer } from "expo-router/drawer";
 import * as React from "react";
+import { ActivityIndicator, View } from "react-native";
+import { useAuth } from "../../src/entities/session/model/use-auth";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 
 export default function DrawerLayout() {
   const { colors } = useAppTheme();
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.bg,
+        }}
+      >
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <Redirect href="/login" />;
+  }
 
   return (
     <Drawer
@@ -12,7 +35,6 @@ export default function DrawerLayout() {
         headerStyle: { backgroundColor: colors.card },
         headerTintColor: colors.text,
         headerShadowVisible: false,
-
         drawerStyle: { backgroundColor: colors.card },
         drawerActiveTintColor: colors.text,
         drawerInactiveTintColor: colors.muted,
@@ -29,44 +51,38 @@ export default function DrawerLayout() {
       <Drawer.Screen
         name="index"
         options={{
-          title: "Аптечка",
-          drawerLabel: "Главная",
-          drawerIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
-          ),
+          title: "Medicines",
+          drawerLabel: "Home",
+          drawerIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
         }}
       />
       <Drawer.Screen
         name="family"
         options={{
-          title: "Семья",
-          drawerLabel: "Члены семьи",
-          drawerIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size} color={color} />
-          ),
+          title: "Family",
+          drawerLabel: "Family Members",
+          drawerIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
         }}
       />
       <Drawer.Screen
         name="settings"
         options={{
-          title: "Настройки",
-          drawerLabel: "Настройки",
-          drawerIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
-          ),
+          title: "Settings",
+          drawerLabel: "Settings",
+          drawerIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
         }}
       />
       <Drawer.Screen
         name="medicine/new"
         options={{
-          title: "Добавление",
+          title: "Add Medicine",
           drawerItemStyle: { display: "none" },
         }}
       />
       <Drawer.Screen
         name="medicine/[id]"
         options={{
-          title: "Редактирование",
+          title: "Edit Medicine",
           drawerItemStyle: { display: "none" },
         }}
       />
