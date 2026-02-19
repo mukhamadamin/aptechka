@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useAuth } from "../src/entities/session/model/use-auth";
 import { loginWithEmail, registerWithEmail } from "../src/features/auth/api/auth-service";
+import { useLanguage } from "../src/i18n/LanguageProvider";
 import { useAppTheme } from "../src/theme/ThemeProvider";
 import { PrimaryButton } from "../src/ui/components";
 
@@ -21,6 +22,7 @@ type AuthMode = "login" | "register";
 export default function LoginScreen() {
   const { user, loading } = useAuth();
   const { colors, theme } = useAppTheme();
+  const { t } = useLanguage();
 
   const [mode, setMode] = React.useState<AuthMode>("login");
   const [displayName, setDisplayName] = React.useState("");
@@ -36,12 +38,12 @@ export default function LoginScreen() {
     const normalizedEmail = email.trim().toLowerCase();
 
     if (!normalizedEmail.includes("@") || password.length < 6) {
-      Alert.alert("Check your input", "Please provide a valid email and a password with at least 6 characters.");
+      Alert.alert(t("auth.checkInput"), t("auth.invalid"));
       return;
     }
 
     if (mode === "register" && displayName.trim().length < 2) {
-      Alert.alert("Check your input", "Name must be at least 2 characters.");
+      Alert.alert(t("auth.checkInput"), t("auth.nameInvalid"));
       return;
     }
 
@@ -58,8 +60,8 @@ export default function LoginScreen() {
         });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Request failed.";
-      Alert.alert("Error", message);
+      const message = error instanceof Error ? error.message : t("auth.requestFailed");
+      Alert.alert(t("common.error"), message);
     } finally {
       setSubmitting(false);
     }
@@ -68,12 +70,15 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.screen, { backgroundColor: colors.bg }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingBottom: 28 }]}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.title, { color: colors.text }]}>Home Aid Kit</Text>
-          <Text style={[styles.subtitle, { color: colors.muted }]}>Sign in to store and sync your data with Firebase.</Text>
+          <Text style={[styles.title, { color: colors.text }]}>{t("auth.title")}</Text>
+          <Text style={[styles.subtitle, { color: colors.muted }]}>{t("auth.subtitle")}</Text>
 
           <View style={styles.tabs}>
             <Pressable
@@ -87,7 +92,7 @@ export default function LoginScreen() {
                 pressed && { opacity: 0.9 },
               ]}
             >
-              <Text style={[styles.tabLabel, { color: colors.text }]}>Sign In</Text>
+              <Text style={[styles.tabLabel, { color: colors.text }]}>{t("auth.login")}</Text>
             </Pressable>
             <Pressable
               onPress={() => setMode("register")}
@@ -100,15 +105,15 @@ export default function LoginScreen() {
                 pressed && { opacity: 0.9 },
               ]}
             >
-              <Text style={[styles.tabLabel, { color: colors.text }]}>Register</Text>
+              <Text style={[styles.tabLabel, { color: colors.text }]}>{t("auth.register")}</Text>
             </Pressable>
           </View>
 
           {mode === "register" ? (
             <Field
-              label="Name"
+              label={t("auth.name")}
               value={displayName}
-              placeholder="For example: Anna"
+              placeholder={t("auth.namePlaceholder")}
               onChangeText={setDisplayName}
               colors={colors}
               theme={theme}
@@ -127,9 +132,9 @@ export default function LoginScreen() {
           />
 
           <Field
-            label="Password"
+            label={t("auth.password")}
             value={password}
-            placeholder="At least 6 characters"
+            placeholder={t("auth.passwordPlaceholder")}
             onChangeText={setPassword}
             secureTextEntry
             autoCapitalize="none"
@@ -139,7 +144,7 @@ export default function LoginScreen() {
 
           <View style={{ height: 16 }} />
           <PrimaryButton
-            title={mode === "login" ? "Sign In" : "Create Account"}
+            title={mode === "login" ? t("auth.signIn") : t("auth.create")}
             onPress={onSubmit}
             loading={submitting}
           />

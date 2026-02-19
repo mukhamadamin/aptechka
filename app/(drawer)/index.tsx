@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as React from "react";
 import {
@@ -10,13 +11,18 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { deleteMedicine, listMedicines } from "../../src/entities/medicine/api/medicine-repository";
+import {
+  deleteMedicine,
+  listMedicines,
+  saveMedicine,
+} from "../../src/entities/medicine/api/medicine-repository";
 import { useHousehold } from "../../src/entities/session/model/use-household";
+import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { cancelNotificationIds } from "../../src/notifications/notifications";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 import type { Medicine } from "../../src/types/medicine";
 import { IconButton, Pill, PrimaryButton } from "../../src/ui/components";
+import { syncWidgetMedicines } from "../../src/widgets/widget-sync";
 
 function daysLeft(expiresAt?: string) {
   if (!expiresAt) return null;
@@ -30,30 +36,35 @@ function daysLeft(expiresAt?: string) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
-function formatExpiry(expiresAt?: string) {
+function formatExpiry(expiresAt: string | undefined, language: "ru" | "en") {
   if (!expiresAt) return null;
   const d = new Date(expiresAt);
   if (Number.isNaN(d.getTime())) return null;
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${dd}.${mm}.${yyyy}`;
+  return new Intl.DateTimeFormat(language === "ru" ? "ru-RU" : "en-US").format(d);
+}
+
+function parseQuantity(value?: string): number | null {
+  if (!value) return null;
+  const match = value.match(/(\d+(?:[.,]\d+)?)/);
+  if (!match) return null;
+  const quantity = Number(match[0].replace(",", "."));
+  return Number.isFinite(quantity) ? quantity : null;
+}
+
+function formatQuantity(value?: number, unit?: string, fallback?: string): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${value} ${unit ?? ""}`.trim();
+  }
+  return fallback;
 }
 
 type FilterMode = "all" | "expiring" | "expired" | "noExpiry" | "withNotes";
-
-const FILTER_LABELS: Record<FilterMode, string> = {
-  all: "All",
-  expiring: "Expiring (<= 7 days)",
-  expired: "Expired",
-  noExpiry: "No Expiry",
-  withNotes: "With Notes",
-};
 
 export default function HomeScreen() {
   const router = useRouter();
   const { colors } = useAppTheme();
   const { householdId } = useHousehold();
+  const { language, t } = useLanguage();
 
   const [items, setItems] = React.useState<Medicine[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -63,6 +74,17 @@ export default function HomeScreen() {
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
+  const filterLabels = React.useMemo<Record<FilterMode, string>>(
+    () => ({
+      all: t("home.filter.all"),
+      expiring: t("home.filter.expiring"),
+      expired: t("home.filter.expired"),
+      noExpiry: t("home.filter.noExpiry"),
+      withNotes: t("home.filter.withNotes"),
+    }),
+    [t]
+  );
+
   const fetchData = React.useCallback(async () => {
     if (!householdId) {
       setItems([]);
@@ -71,6 +93,7 @@ export default function HomeScreen() {
 
     const list = await listMedicines(householdId);
     setItems(list);
+    await syncWidgetMedicines(list);
   }, [householdId]);
 
   React.useEffect(() => {
@@ -116,10 +139,10 @@ export default function HomeScreen() {
 
     const med = items.find((x) => x.id === id);
 
-    Alert.alert("Delete medicine", "This action cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t("home.delete.title"), t("home.delete.text"), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Delete",
+        text: t("common.delete"),
         style: "destructive",
         onPress: async () => {
           await cancelNotificationIds(med?.notificationIds);
@@ -130,6 +153,32 @@ export default function HomeScreen() {
     ]);
   };
 
+  const onUseOne = async (medicine: Medicine) => {
+    if (!householdId) return;
+
+    const currentQuantity =
+      typeof medicine.quantityValue === "number"
+        ? medicine.quantityValue
+        : parseQuantity(medicine.quantity);
+
+    if (currentQuantity === null) {
+      Alert.alert(t("home.useOneErrorTitle"), t("home.useOneErrorText"));
+      return;
+    }
+
+    const nextQuantity = Math.max(0, Math.round((currentQuantity - 1) * 100) / 100);
+
+    const updated: Medicine = {
+      ...medicine,
+      quantityValue: nextQuantity,
+      quantity: formatQuantity(nextQuantity, medicine.quantityUnit, medicine.quantity),
+      updatedAt: Date.now(),
+    };
+
+    await saveMedicine(householdId, updated);
+    await fetchData();
+  };
+
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
 
@@ -137,7 +186,8 @@ export default function HomeScreen() {
       const a = (x.name ?? "").toLowerCase();
       const b = (x.dosage ?? "").toLowerCase();
       const c = (x.notes ?? "").toLowerCase();
-      const queryMatch = !q || a.includes(q) || b.includes(q) || c.includes(q);
+      const d = (x.manufacturerCountry ?? "").toLowerCase();
+      const queryMatch = !q || a.includes(q) || b.includes(q) || c.includes(q) || d.includes(q);
       if (!queryMatch) return false;
 
       if (filterMode === "all") return true;
@@ -155,20 +205,34 @@ export default function HomeScreen() {
   const renderItem = ({ item }: { item: Medicine }) => {
     const isOpen = expandedId === item.id;
     const left = daysLeft(item.expiresAt);
-    const exp = formatExpiry(item.expiresAt);
+    const exp = formatExpiry(item.expiresAt, language);
+
+    const qtyText = formatQuantity(item.quantityValue, item.quantityUnit, item.quantity);
+    const qtyNumber =
+      typeof item.quantityValue === "number" ? item.quantityValue : parseQuantity(item.quantity);
 
     let status: { label: string; tone: "default" | "danger" | "muted" } | null = null;
 
     if (left !== null && exp) {
-      if (left < 0) status = { label: `Expired - ${exp}`, tone: "danger" };
-      else if (left === 0) status = { label: `Expires today - ${exp}`, tone: "danger" };
-      else if (left <= 7) status = { label: `Expires in ${left} day(s) - ${exp}`, tone: "danger" };
-      else status = { label: `Expiry: ${exp}`, tone: "muted" };
+      if (left < 0) status = { label: t("home.expired", { date: exp }), tone: "danger" };
+      else if (left === 0) status = { label: t("home.expiresToday", { date: exp }), tone: "danger" };
+      else if (left <= 7) status = { label: t("home.expiresIn", { days: left, date: exp }), tone: "danger" };
+      else status = { label: t("home.expiry", { date: exp }), tone: "muted" };
     } else if (exp) {
-      status = { label: `Expiry: ${exp}`, tone: "muted" };
+      status = { label: t("home.expiry", { date: exp }), tone: "muted" };
     }
 
-    const qty = item.quantity ? `Qty: ${item.quantity}` : null;
+    const qty = qtyText ? t("home.qty", { value: qtyText }) : null;
+    const country = item.manufacturerCountry ? t("home.country", { value: item.manufacturerCountry }) : null;
+
+    const stockStatus =
+      qtyNumber === null
+        ? null
+        : qtyNumber === 0
+          ? { label: t("home.stock.empty"), tone: "danger" as const }
+          : qtyNumber <= 5
+            ? { label: t("home.stock.low"), tone: "danger" as const }
+            : null;
 
     return (
       <Pressable
@@ -191,6 +255,7 @@ export default function HomeScreen() {
             {!isOpen ? (
               <View style={{ marginTop: 8, gap: 8, flexDirection: "row", flexWrap: "wrap" }}>
                 {qty ? <Pill label={qty} tone="muted" /> : null}
+                {stockStatus ? <Pill label={stockStatus.label} tone={stockStatus.tone} /> : null}
                 {status ? <Pill label={status.label} tone={status.tone} /> : null}
               </View>
             ) : null}
@@ -205,10 +270,23 @@ export default function HomeScreen() {
         {isOpen ? (
           <View style={{ marginTop: 12, gap: 10 }}>
             <View style={styles.pillsRow}>
-              {item.dosage ? <Pill label={`Dosage: ${item.dosage}`} tone="muted" /> : null}
-              {item.quantity ? <Pill label={`Qty: ${item.quantity}`} tone="muted" /> : null}
+              {item.dosage ? <Pill label={t("home.dosage", { value: item.dosage })} tone="muted" /> : null}
+              {qty ? <Pill label={qty} tone="muted" /> : null}
+              {country ? <Pill label={country} tone="muted" /> : null}
+              {stockStatus ? <Pill label={stockStatus.label} tone={stockStatus.tone} /> : null}
               {status ? <Pill label={status.label} tone={status.tone} /> : null}
             </View>
+
+            <Pressable
+              onPress={() => onUseOne(item)}
+              style={({ pressed }) => [
+                styles.useBtn,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+                pressed && { opacity: 0.9 },
+              ]}
+            >
+              <Text style={[styles.useBtnText, { color: colors.text }]}>{t("home.useOne")}</Text>
+            </Pressable>
 
             {item.notes ? (
               <Text style={[styles.notes, { color: colors.faint }]} numberOfLines={6}>
@@ -216,7 +294,7 @@ export default function HomeScreen() {
               </Text>
             ) : null}
 
-            <Text style={[styles.hint, { color: colors.muted }]}>Tap again to collapse.</Text>
+            <Text style={[styles.hint, { color: colors.muted }]}>{t("home.collapse")}</Text>
           </View>
         ) : null}
       </Pressable>
@@ -226,14 +304,14 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.headerBlock, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.h1, { color: colors.text }]}>Home Medicine Kit</Text>
-        <Text style={[styles.h2, { color: colors.muted }]}>Shared data for your household.</Text>
+        <Text style={[styles.h1, { color: colors.text }]}>{t("home.title")}</Text>
+        <Text style={[styles.h2, { color: colors.muted }]}>{t("home.subtitle")}</Text>
 
         <View style={styles.searchRow}>
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search by name, dosage, or notes"
+            placeholder={t("home.searchPlaceholder")}
             placeholderTextColor="rgba(120,120,120,0.55)"
             style={[
               styles.search,
@@ -255,13 +333,13 @@ export default function HomeScreen() {
             ]}
           >
             <Ionicons name="options-outline" size={16} color={colors.text} />
-            <Text style={[styles.filterBtnText, { color: colors.text }]}>Filter</Text>
+            <Text style={[styles.filterBtnText, { color: colors.text }]}>{t("home.filter")}</Text>
           </Pressable>
         </View>
 
         {filtersOpen ? (
           <View style={styles.filtersWrap}>
-            {(Object.keys(FILTER_LABELS) as FilterMode[]).map((mode) => {
+            {(Object.keys(filterLabels) as FilterMode[]).map((mode) => {
               const active = mode === filterMode;
               return (
                 <Pressable
@@ -276,7 +354,7 @@ export default function HomeScreen() {
                     pressed && { opacity: 0.88 },
                   ]}
                 >
-                  <Text style={[styles.filterChipText, { color: colors.text }]}>{FILTER_LABELS[mode]}</Text>
+                  <Text style={[styles.filterChipText, { color: colors.text }]}>{filterLabels[mode]}</Text>
                 </Pressable>
               );
             })}
@@ -285,7 +363,7 @@ export default function HomeScreen() {
 
         <View style={{ height: 12 }} />
         <PrimaryButton
-          title="Add Medicine"
+          title={t("home.add")}
           onPress={() => router.push("/medicine/new")}
           disabled={!householdId}
         />
@@ -295,21 +373,19 @@ export default function HomeScreen() {
 
       {!householdId ? (
         <View style={[styles.emptyWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No household connected</Text>
-          <Text style={[styles.emptyText, { color: colors.muted }]}>Open Settings and join a household by code.</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("home.empty.noHousehold")}</Text>
+          <Text style={[styles.emptyText, { color: colors.muted }]}>{t("home.empty.noHouseholdText")}</Text>
         </View>
       ) : loading ? (
         <View style={[styles.emptyWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>Loading</Text>
-          <Text style={[styles.emptyText, { color: colors.muted }]}>Preparing your shared list.</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("common.loading")}</Text>
+          <Text style={[styles.emptyText, { color: colors.muted }]}>{t("home.loadingText")}</Text>
         </View>
       ) : filtered.length === 0 ? (
         <View style={[styles.emptyWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No medicines yet</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("home.empty.list")}</Text>
           <Text style={[styles.emptyText, { color: colors.muted }]}>
-            {query.trim() || filterMode !== "all"
-              ? "Try changing your search or filter."
-              : "Add your first medicine."}
+            {query.trim() || filterMode !== "all" ? t("home.empty.query") : t("home.empty.first")}
           </Text>
         </View>
       ) : (
@@ -365,6 +441,14 @@ const styles = StyleSheet.create({
   title: { fontSize: 15, fontWeight: "900" },
   iconRow: { flexDirection: "row", gap: 8 },
   pillsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  useBtn: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  useBtnText: { fontSize: 13, fontWeight: "800" },
   notes: { lineHeight: 18 },
   hint: { fontSize: 12, fontWeight: "700" },
   emptyWrap: { borderRadius: 18, padding: 14, borderWidth: 1 },

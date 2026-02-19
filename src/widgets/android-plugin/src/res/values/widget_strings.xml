@@ -1,0 +1,7 @@
+﻿<resources>
+  <string name="widget_empty">No items yet</string>
+  <string name="widget_medicines_title">Medicines</string>
+  <string name="widget_shopping_title">Shopping</string>
+  <string name="widget_medicines_desc">Your medicines list widget</string>
+  <string name="widget_shopping_desc">Your shopping list widget</string>
+</resources>

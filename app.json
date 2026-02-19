@@ -1,4 +1,4 @@
-{
+﻿{
   "expo": {
     "name": "HomeAidKit",
     "slug": "HomeAidKit",
@@ -12,6 +12,7 @@
       "supportsTablet": true
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -40,7 +41,32 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow camera access to scan medicine barcodes."
+        }
+      ],
+      [
+        "@bittingz/expo-widgets",
+        {
+          "android": {
+            "src": "./src/widgets/android-plugin",
+            "widgets": [
+              {
+                "name": "MedicinesWidgetProvider",
+                "resourceName": "@xml/medicines_widget_info"
+              },
+              {
+                "name": "ShoppingWidgetProvider",
+                "resourceName": "@xml/shopping_widget_info"
+              }
+            ],
+            "distPlaceholder": "com.anonymous.HomeAidKit"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

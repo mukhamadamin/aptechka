@@ -5,6 +5,11 @@ function safeTrim(value?: string) {
   return trimmed.length ? trimmed : undefined;
 }
 
+function normalizeQuantityValue(value?: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.round(value * 100) / 100);
+}
+
 export function normalizeMedicineForm(input: MedicineForm): MedicineForm {
   const remindDaysBefore =
     typeof input.remindDaysBefore === "number" && Number.isFinite(input.remindDaysBefore)
@@ -15,11 +20,25 @@ export function normalizeMedicineForm(input: MedicineForm): MedicineForm {
   const expiresISO =
     expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt.toISOString() : undefined;
 
+  const quantityValue = normalizeQuantityValue(input.quantityValue);
+  const quantityUnit = input.quantityUnit;
+  const legacyQuantity = safeTrim(input.quantity);
+  const quantityText =
+    quantityValue !== undefined
+      ? `${quantityValue} ${quantityUnit ?? ""}`.trim()
+      : legacyQuantity;
+
   return {
     name: (input.name ?? "").trim(),
+    dosageForm: input.dosageForm,
     dosage: safeTrim(input.dosage),
-    quantity: safeTrim(input.quantity),
+    quantityValue,
+    quantityUnit,
+    quantity: quantityText,
     notes: safeTrim(input.notes),
+    manufacturerCountry: safeTrim(input.manufacturerCountry),
+    barcode: safeTrim(input.barcode),
+    intakeTimes: safeTrim(input.intakeTimes),
     expiresAt: expiresISO,
     remindDaysBefore,
   };
@@ -27,7 +46,7 @@ export function normalizeMedicineForm(input: MedicineForm): MedicineForm {
 
 export function validateMedicineForm(form: MedicineForm) {
   if (!form.name || form.name.trim().length < 2) {
-    return "Please enter a medicine name (at least 2 characters).";
+    return "validation.medicineName";
   }
 
   return null;

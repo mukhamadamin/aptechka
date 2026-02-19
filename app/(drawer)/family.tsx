@@ -3,12 +3,14 @@ import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { listHouseholdMembers } from "../../src/entities/family/api/family-repository";
 import type { UserProfile } from "../../src/entities/session/model/types";
 import { useHousehold } from "../../src/entities/session/model/use-household";
+import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 import { Pill } from "../../src/ui/components";
 
 export default function FamilyScreen() {
   const { colors } = useAppTheme();
   const { householdId, user } = useHousehold();
+  const { t } = useLanguage();
 
   const [members, setMembers] = React.useState<UserProfile[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -46,26 +48,26 @@ export default function FamilyScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.h1, { color: colors.text }]}>Family Users</Text>
-        <Text style={[styles.h2, { color: colors.muted }]}>All members are real app accounts sharing one household database.</Text>
+        <Text style={[styles.h1, { color: colors.text }]}>{t("family.title")}</Text>
+        <Text style={[styles.h2, { color: colors.muted }]}>{t("family.subtitle")}</Text>
       </View>
 
       <View style={{ height: 12 }} />
 
       {!householdId ? (
         <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No household connected</Text>
-          <Text style={[styles.emptyText, { color: colors.muted }]}>Use Settings to join a household by invite code.</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("family.empty.noHousehold")}</Text>
+          <Text style={[styles.emptyText, { color: colors.muted }]}>{t("family.empty.noHouseholdText")}</Text>
         </View>
       ) : loading ? (
         <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>Loading</Text>
-          <Text style={[styles.emptyText, { color: colors.muted }]}>Loading household members.</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("common.loading")}</Text>
+          <Text style={[styles.emptyText, { color: colors.muted }]}>{t("family.loadingText")}</Text>
         </View>
       ) : members.length === 0 ? (
         <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No users found</Text>
-          <Text style={[styles.emptyText, { color: colors.muted }]}>Ask family members to register and join the same household code.</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("family.empty.none")}</Text>
+          <Text style={[styles.emptyText, { color: colors.muted }]}>{t("family.empty.noneText")}</Text>
         </View>
       ) : (
         <FlatList
@@ -82,8 +84,8 @@ export default function FamilyScreen() {
             />
           }
           renderItem={({ item }) => {
-            const title = item.displayName?.trim() || item.email || "Unnamed user";
-            const subtitle = item.email ?? "No email";
+            const title = item.displayName?.trim() || item.email || t("family.unnamed");
+            const subtitle = item.email ?? t("family.noEmail");
             const isYou = item.uid === user?.uid;
 
             return (
@@ -96,7 +98,7 @@ export default function FamilyScreen() {
                 </Text>
                 {isYou ? (
                   <View style={{ marginTop: 8 }}>
-                    <Pill label="You" tone="default" />
+                    <Pill label={t("family.you")} tone="default" />
                   </View>
                 ) : null}
               </View>

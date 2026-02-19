@@ -65,7 +65,7 @@ export async function joinHouseholdByCode(uid: string, code: string): Promise<Ho
   const snapshot = await getDocs(householdQuery);
 
   if (snapshot.empty) {
-    throw new Error("Household code not found.");
+    throw new Error("household.codeNotFound");
   }
 
   const household = snapshot.docs[0].data() as Household;

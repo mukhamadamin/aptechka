@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as React from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import {
   createAndAssignHousehold,
   getHouseholdById,
@@ -8,12 +8,22 @@ import {
 } from "../../src/entities/household/api/household-repository";
 import { useHousehold } from "../../src/entities/session/model/use-household";
 import { logout } from "../../src/features/auth/api/auth-service";
+import { useLanguage } from "../../src/i18n/LanguageProvider";
+import { disableSosShadeShortcut, enableSosShadeShortcut } from "../../src/notifications/sos-shortcut";
+import { usePreferences } from "../../src/preferences/PreferencesProvider";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 import { PrimaryButton } from "../../src/ui/components";
+
+function localizeError(message: string, t: (key: string, vars?: Record<string, string | number>) => string) {
+  if (message.startsWith("household.")) return t(message);
+  return message;
+}
 
 export default function SettingsScreen() {
   const { colors, theme, setTheme } = useAppTheme();
   const { user, householdId, refresh } = useHousehold();
+  const { language, setLanguage, t } = useLanguage();
+  const { showSosInPanel, setShowSosInPanel } = usePreferences();
 
   const [loggingOut, setLoggingOut] = React.useState(false);
   const [joining, setJoining] = React.useState(false);
@@ -45,7 +55,7 @@ export default function SettingsScreen() {
     if (!user) return;
 
     if (joinCode.trim().length < 4) {
-      Alert.alert("Check your input", "Please enter a valid household code.");
+      Alert.alert(t("auth.checkInput"), t("settings.household.invalid"));
       return;
     }
 
@@ -54,10 +64,11 @@ export default function SettingsScreen() {
       const household = await joinHouseholdByCode(user.uid, joinCode);
       refresh();
       setJoinCode("");
-      Alert.alert("Joined", `You are now in household ${household.joinCode}.`);
+      Alert.alert(t("common.ok"), t("settings.household.joined", { code: household.joinCode }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to join household.";
-      Alert.alert("Error", message);
+      const fallback = t("settings.household.joinFail");
+      const message = error instanceof Error ? localizeError(error.message, t) : fallback;
+      Alert.alert(t("common.error"), message);
     } finally {
       setJoining(false);
     }
@@ -70,10 +81,10 @@ export default function SettingsScreen() {
     try {
       const household = await createAndAssignHousehold(user.uid);
       refresh();
-      Alert.alert("Created", `Your new household code is ${household.joinCode}.`);
+      Alert.alert(t("common.ok"), t("settings.household.created", { code: household.joinCode }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create household.";
-      Alert.alert("Error", message);
+      const message = error instanceof Error ? error.message : t("settings.household.createFail");
+      Alert.alert(t("common.error"), message);
     } finally {
       setCreating(false);
     }
@@ -84,18 +95,34 @@ export default function SettingsScreen() {
     try {
       await logout();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to sign out.";
-      Alert.alert("Error", message);
+      const message = error instanceof Error ? error.message : t("settings.signoutFail");
+      Alert.alert(t("common.error"), message);
     } finally {
       setLoggingOut(false);
     }
   };
 
+  const onToggleSos = async (next: boolean) => {
+    if (next) {
+      const ok = await enableSosShadeShortcut();
+      if (!ok) {
+        Alert.alert(t("common.error"), t("settings.sos.permissionDenied"));
+        setShowSosInPanel(false);
+        return;
+      }
+      setShowSosInPanel(true);
+      return;
+    }
+
+    await disableSosShadeShortcut();
+    setShowSosInPanel(false);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.h1, { color: colors.text }]}>Settings</Text>
-        <Text style={[styles.h2, { color: colors.muted }]}>Manage theme and household sharing.</Text>
+        <Text style={[styles.h1, { color: colors.text }]}>{t("settings.title")}</Text>
+        <Text style={[styles.h2, { color: colors.muted }]}>{t("settings.subtitle")}</Text>
 
         <View style={{ height: 12 }} />
 
@@ -111,8 +138,8 @@ export default function SettingsScreen() {
           ]}
         >
           <View style={{ flex: 1 }}>
-            <Text style={[styles.optionTitle, { color: colors.text }]}>Dark</Text>
-            <Text style={[styles.optionText, { color: colors.muted }]}>High contrast and calm.</Text>
+            <Text style={[styles.optionTitle, { color: colors.text }]}>{t("settings.theme.dark")}</Text>
+            <Text style={[styles.optionText, { color: colors.muted }]}>{t("settings.theme.darkDesc")}</Text>
           </View>
           {theme === "dark" ? <Ionicons name="checkmark-outline" size={22} color={colors.text} /> : null}
         </Pressable>
@@ -129,20 +156,78 @@ export default function SettingsScreen() {
           ]}
         >
           <View style={{ flex: 1 }}>
-            <Text style={[styles.optionTitle, { color: colors.text }]}>Light</Text>
-            <Text style={[styles.optionText, { color: colors.muted }]}>Brighter and more neutral.</Text>
+            <Text style={[styles.optionTitle, { color: colors.text }]}>{t("settings.theme.light")}</Text>
+            <Text style={[styles.optionText, { color: colors.muted }]}>{t("settings.theme.lightDesc")}</Text>
           </View>
           {theme === "light" ? <Ionicons name="checkmark-outline" size={22} color={colors.text} /> : null}
         </Pressable>
 
         <View style={{ height: 16 }} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Household</Text>
-        <Text style={[styles.optionText, { color: colors.muted }]}>Current code: {currentCode ?? "not loaded"}</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.lang.title")}</Text>
+
+        <View style={styles.langRow}>
+          <Pressable
+            onPress={() => setLanguage("ru")}
+            style={({ pressed }) => [
+              styles.langBtn,
+              {
+                borderColor: language === "ru" ? colors.primary : colors.border,
+                backgroundColor: language === "ru" ? colors.primarySoft : colors.surface,
+              },
+              pressed && { opacity: 0.9 },
+            ]}
+          >
+            <Text style={[styles.langText, { color: colors.text }]}>{t("settings.lang.ru")}</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setLanguage("en")}
+            style={({ pressed }) => [
+              styles.langBtn,
+              {
+                borderColor: language === "en" ? colors.primary : colors.border,
+                backgroundColor: language === "en" ? colors.primarySoft : colors.surface,
+              },
+              pressed && { opacity: 0.9 },
+            ]}
+          >
+            <Text style={[styles.langText, { color: colors.text }]}>{t("settings.lang.en")}</Text>
+          </Pressable>
+        </View>
+
+        <View style={{ height: 16 }} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.sos.title")}</Text>
+        <View
+          style={[
+            styles.option,
+            {
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
+            },
+          ]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.optionTitle, { color: colors.text }]}>{t("settings.sos.toggle")}</Text>
+            <Text style={[styles.optionText, { color: colors.muted }]}>{t("settings.sos.hint")}</Text>
+          </View>
+          <Switch
+            value={showSosInPanel}
+            onValueChange={onToggleSos}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.card}
+          />
+        </View>
+
+        <View style={{ height: 16 }} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.household.title")}</Text>
+        <Text style={[styles.optionText, { color: colors.muted }]}>
+          {t("settings.household.current", { code: currentCode ?? t("settings.household.notLoaded") })}
+        </Text>
 
         {!householdId ? (
           <>
             <View style={{ height: 10 }} />
-            <PrimaryButton title="Create Household" onPress={onCreateHousehold} loading={creating} />
+            <PrimaryButton title={t("settings.household.create")} onPress={onCreateHousehold} loading={creating} />
           </>
         ) : null}
 
@@ -150,7 +235,7 @@ export default function SettingsScreen() {
           value={joinCode}
           onChangeText={setJoinCode}
           autoCapitalize="characters"
-          placeholder="Enter household code"
+          placeholder={t("settings.household.placeholder")}
           placeholderTextColor="rgba(120,120,120,0.55)"
           style={[
             styles.input,
@@ -158,10 +243,10 @@ export default function SettingsScreen() {
           ]}
         />
 
-        <PrimaryButton title="Join Household" onPress={onJoin} loading={joining} />
+        <PrimaryButton title={t("settings.household.join")} onPress={onJoin} loading={joining} />
 
         <View style={{ height: 16 }} />
-        <PrimaryButton title="Sign Out" onPress={onLogout} loading={loggingOut} />
+        <PrimaryButton title={t("settings.signout")} onPress={onLogout} loading={loggingOut} />
       </View>
     </View>
   );
@@ -184,6 +269,15 @@ const styles = StyleSheet.create({
   optionTitle: { fontSize: 15, fontWeight: "900" },
   optionText: { marginTop: 4, lineHeight: 18 },
   sectionTitle: { marginTop: 8, fontSize: 16, fontWeight: "900" },
+  langRow: { marginTop: 10, flexDirection: "row", gap: 8 },
+  langBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  langText: { fontSize: 14, fontWeight: "800" },
   input: {
     marginTop: 10,
     marginBottom: 10,
