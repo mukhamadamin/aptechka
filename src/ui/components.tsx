@@ -25,9 +25,9 @@ export function PrimaryButton(props: {
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={colors.text} />
+        <ActivityIndicator color="#FFFFFF" />
       ) : (
-        <Text style={[styles.btnText, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.btnText, { color: "#FFFFFF" }]}>{title}</Text>
       )}
     </Pressable>
   );

@@ -77,6 +77,16 @@ export default function DrawerLayout() {
         }}
       />
       <Drawer.Screen
+        name="chat"
+        options={{
+          title: t("drawer.chat.title"),
+          drawerLabel: t("drawer.chat.label"),
+          drawerIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Drawer.Screen
         name="shopping"
         options={{
           title: t("drawer.shopping.title"),
