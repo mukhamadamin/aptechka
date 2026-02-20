@@ -1,8 +1,23 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import * as React from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { updateMyProfile } from "../../src/features/auth/api/auth-service";
+import {
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  updateMyDisplayName,
+  updateMyPassword,
+  updateMyProfile,
+} from "../../src/features/auth/api/auth-service";
 import { useHousehold } from "../../src/entities/session/model/use-household";
 import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { setSosPhone } from "../../src/notifications/sos-shortcut";
@@ -33,9 +48,14 @@ export default function ProfileScreen() {
   const { colors, theme } = useAppTheme();
   const { user, profile } = useHousehold();
   const { t } = useLanguage();
+  const scrollRef = React.useRef<ScrollView>(null);
 
   const [saving, setSaving] = React.useState(false);
+  const [changingPassword, setChangingPassword] = React.useState(false);
   const [form, setForm] = React.useState<SosForm>(EMPTY_FORM);
+  const [displayName, setDisplayName] = React.useState("");
+  const [newPassword, setNewPassword] = React.useState("");
+  const [newPasswordRepeat, setNewPasswordRepeat] = React.useState("");
 
   React.useEffect(() => {
     setForm({
@@ -47,7 +67,16 @@ export default function ProfileScreen() {
       address: profile?.address ?? "",
       notes: profile?.notes ?? "",
     });
-  }, [profile]);
+    setDisplayName(profile?.displayName ?? user?.displayName ?? "");
+  }, [profile, user?.displayName]);
+
+  React.useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+
+    return () => sub.remove();
+  }, []);
 
   React.useEffect(() => {
     setSosPhone(profile?.emergencyContactPhone ?? "").catch(() => {});
@@ -58,7 +87,15 @@ export default function ProfileScreen() {
 
     setSaving(true);
     try {
+      const trimmedName = displayName.trim();
+      const hasNameChange = trimmedName.length >= 2 && trimmedName !== (profile?.displayName ?? user.displayName ?? "");
+
+      if (hasNameChange) {
+        await updateMyDisplayName(user.uid, trimmedName);
+      }
+
       await updateMyProfile(user.uid, {
+        displayName: trimmedName || undefined,
         emergencyContactName: form.emergencyContactName.trim() || undefined,
         emergencyContactPhone: form.emergencyContactPhone.trim() || undefined,
         bloodType: form.bloodType.trim() || undefined,
@@ -71,10 +108,44 @@ export default function ProfileScreen() {
 
       Alert.alert(t("common.ok"), t("assistant.emergency.saved"));
     } catch (error) {
-      const message = error instanceof Error ? error.message : t("assistant.error.saveProfile");
+      const raw = error instanceof Error ? error.message : t("assistant.error.saveProfile");
+      const message = raw.startsWith("auth.") ? t(raw) : raw;
       Alert.alert(t("common.error"), message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onChangePassword = async () => {
+    if (!user) return;
+
+    if (!newPassword && !newPasswordRepeat) {
+      Alert.alert(t("auth.checkInput"), t("auth.passwordInvalid"));
+      return;
+    }
+
+    if (newPassword !== newPasswordRepeat) {
+      Alert.alert(t("auth.checkInput"), t("profile.passwordMismatch"));
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      Alert.alert(t("auth.checkInput"), t("auth.passwordInvalid"));
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      await updateMyPassword(user.uid, newPassword);
+      setNewPassword("");
+      setNewPasswordRepeat("");
+      Alert.alert(t("common.ok"), t("profile.passwordChanged"));
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : t("assistant.error.saveProfile");
+      const message = raw.startsWith("auth.") ? t(raw) : raw;
+      Alert.alert(t("common.error"), message);
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -89,13 +160,30 @@ export default function ProfileScreen() {
   };
 
   return (
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
+    >
     <ScrollView
+      ref={scrollRef}
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={{ padding: 16, paddingTop: 12, paddingBottom: 32 }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+      automaticallyAdjustKeyboardInsets
     >
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.h1, { color: colors.text }]}>{t("profile.title")}</Text>
         <Text style={[styles.h2, { color: colors.muted }]}>{t("profile.subtitle")}</Text>
+
+        <Field
+          label={t("auth.name")}
+          value={displayName}
+          onChangeText={setDisplayName}
+          colors={colors}
+          theme={theme}
+        />
 
         <Field
           label={t("assistant.emergency.contactName")}
@@ -167,7 +255,33 @@ export default function ProfileScreen() {
           <Text style={[styles.sosText, { color: colors.danger }]}>{t("assistant.emergency.call")}</Text>
         </Pressable>
       </View>
+
+      <View style={{ height: 12 }} />
+
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.h1, { color: colors.text }]}>{t("profile.passwordWidgetTitle")}</Text>
+        <Text style={[styles.h2, { color: colors.muted }]}>{t("profile.passwordWidgetSubtitle")}</Text>
+        <Field
+          label={t("profile.newPassword")}
+          value={newPassword}
+          onChangeText={setNewPassword}
+          colors={colors}
+          theme={theme}
+          secureTextEntry
+        />
+        <Field
+          label={t("profile.repeatPassword")}
+          value={newPasswordRepeat}
+          onChangeText={setNewPasswordRepeat}
+          colors={colors}
+          theme={theme}
+          secureTextEntry
+        />
+        <View style={{ height: 10 }} />
+        <PrimaryButton title={t("profile.changePassword")} onPress={onChangePassword} loading={changingPassword} />
+      </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -176,6 +290,7 @@ function Field(props: {
   value: string;
   onChangeText: (v: string) => void;
   multiline?: boolean;
+  secureTextEntry?: boolean;
   colors: ReturnType<typeof useAppTheme>["colors"];
   theme: ReturnType<typeof useAppTheme>["theme"];
 }) {
@@ -186,6 +301,7 @@ function Field(props: {
         value={props.value}
         onChangeText={props.onChangeText}
         multiline={props.multiline}
+        secureTextEntry={props.secureTextEntry}
         autoCorrect={false}
         autoCapitalize="sentences"
         textAlignVertical={props.multiline ? "top" : "center"}

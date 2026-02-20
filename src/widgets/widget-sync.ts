@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import type { ShoppingItem } from "../entities/household-tools/model/types";
+import { buildTodayDosePlan } from "../features/adherence/model/dose-tracker";
 import type { Medicine } from "../types/medicine";
 
 type WidgetPayload = {
@@ -22,14 +23,21 @@ function appPackageName() {
   return Constants.expoConfig?.android?.package ?? "com.anonymous.HomeAidKit";
 }
 
-function medicineLines(input: Medicine[]): string[] {
-  return input.slice(0, 8).map((item) => {
-    const qty =
-      typeof item.quantityValue === "number"
-        ? `${item.quantityValue} ${item.quantityUnit ?? ""}`.trim()
-        : item.quantity ?? "";
+function canUseNativeWidgetsModule() {
+  if (Platform.OS !== "android") return false;
 
-    return qty ? `${item.name} (${qty})` : item.name;
+  // Expo Go cannot load custom native modules from app plugins.
+  if (Constants.executionEnvironment === "storeClient") return false;
+
+  return true;
+}
+
+function medicineLines(input: Medicine[], memberNamesByUid?: Record<string, string>): string[] {
+  const todayPlan = buildTodayDosePlan(input, (uid) => memberNamesByUid?.[uid]);
+
+  return todayPlan.slice(0, 8).map((dose) => {
+    const who = dose.targetMemberNames.length ? ` - ${dose.targetMemberNames.join(", ")}` : "";
+    return `${dose.time} ${dose.medicineName}${who}`;
   });
 }
 
@@ -58,7 +66,7 @@ async function loadPayload(): Promise<WidgetPayload> {
 async function persistPayload(payload: WidgetPayload) {
   await AsyncStorage.setItem(KEY, JSON.stringify(payload));
 
-  if (Platform.OS !== "android") return;
+  if (!canUseNativeWidgetsModule()) return;
 
   try {
     const widgets = await import("@bittingz/expo-widgets");
@@ -68,11 +76,11 @@ async function persistPayload(payload: WidgetPayload) {
   }
 }
 
-export async function syncWidgetMedicines(input: Medicine[]) {
+export async function syncWidgetMedicines(input: Medicine[], memberNamesByUid?: Record<string, string>) {
   const prev = await loadPayload();
   await persistPayload({
     ...prev,
-    medicines: medicineLines(input),
+    medicines: medicineLines(input, memberNamesByUid),
     updatedAt: Date.now(),
   });
 }

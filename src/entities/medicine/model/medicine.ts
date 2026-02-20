@@ -10,6 +10,32 @@ function normalizeQuantityValue(value?: number): number | undefined {
   return Math.max(0, Math.round(value * 100) / 100);
 }
 
+function normalizeMemberUids(values?: string[]): string[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+
+  const unique = Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean)
+    )
+  );
+
+  return unique.length ? unique : undefined;
+}
+
+function normalizeIntakeMembersByTime(value?: Record<string, string[]>): Record<string, string[]> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+
+  const out: Record<string, string[]> = {};
+  for (const [time, members] of Object.entries(value)) {
+    if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(time)) continue;
+    out[time] = normalizeMemberUids(members) ?? [];
+  }
+
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function normalizeMedicineForm(input: MedicineForm): MedicineForm {
   const remindDaysBefore =
     typeof input.remindDaysBefore === "number" && Number.isFinite(input.remindDaysBefore)
@@ -39,6 +65,8 @@ export function normalizeMedicineForm(input: MedicineForm): MedicineForm {
     manufacturerCountry: safeTrim(input.manufacturerCountry),
     barcode: safeTrim(input.barcode),
     intakeTimes: safeTrim(input.intakeTimes),
+    intakeMemberUids: normalizeMemberUids(input.intakeMemberUids),
+    intakeMembersByTime: normalizeIntakeMembersByTime(input.intakeMembersByTime),
     expiresAt: expiresISO,
     remindDaysBefore,
   };

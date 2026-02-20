@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -17,6 +18,7 @@ import {
   getMedicineById,
   saveMedicine,
 } from "../../../src/entities/medicine/api/medicine-repository";
+import { listHouseholdMembers } from "../../../src/entities/family/api/family-repository";
 import {
   createMedicine,
   normalizeMedicineForm,
@@ -32,6 +34,7 @@ import {
 import { useAppTheme } from "../../../src/theme/ThemeProvider";
 import type { MedicineForm } from "../../../src/types/medicine";
 import { GhostButton, PrimaryButton } from "../../../src/ui/components";
+import type { UserProfile } from "../../../src/entities/session/model/types";
 
 const DOSAGE_VALUES: NonNullable<MedicineForm["dosageForm"]>[] = ["tablet", "capsule", "liquid", "powder", "other"];
 const UNIT_VALUES: NonNullable<MedicineForm["quantityUnit"]>[] = ["pcs", "ml", "g"];
@@ -47,6 +50,7 @@ const emptyForm: MedicineForm = {
   manufacturerCountry: "",
   barcode: "",
   intakeTimes: "",
+  intakeMembersByTime: {},
   expiresAt: undefined,
   remindDaysBefore: 7,
 };
@@ -92,6 +96,43 @@ function parseLegacyQuantity(raw?: string): {
   return { quantityValue: value, quantityUnit: "pcs" };
 }
 
+function parseIntakeTimes(raw?: string): string[] {
+  if (!raw?.trim()) return [];
+
+  const parsed = raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = item.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+      if (!match) return null;
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+      return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    })
+    .filter((item): item is string => Boolean(item));
+
+  return Array.from(new Set(parsed));
+}
+
+function normalizeMembersByTime(value?: Record<string, string[]>): Record<string, string[]> {
+  if (!value || typeof value !== "object") return {};
+
+  const out: Record<string, string[]> = {};
+  for (const [time, members] of Object.entries(value)) {
+    if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(time)) continue;
+    out[time] = Array.from(
+      new Set(
+        (Array.isArray(members) ? members : [])
+          .map((uid) => (typeof uid === "string" ? uid.trim() : ""))
+          .filter(Boolean)
+      )
+    );
+  }
+
+  return out;
+}
+
 function localizeError(message: string, t: (key: string, vars?: Record<string, string | number>) => string) {
   if (message.startsWith("validation.")) return t(message);
   return message;
@@ -109,10 +150,20 @@ export default function UpsertMedicine() {
   const [saving, setSaving] = React.useState(false);
   const [initialLoading, setInitialLoading] = React.useState(!!id);
   const [showPicker, setShowPicker] = React.useState(false);
+  const [householdMembers, setHouseholdMembers] = React.useState<UserProfile[]>([]);
+  const scrollRef = React.useRef<ScrollView>(null);
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scanOpen, setScanOpen] = React.useState(false);
   const [scanLocked, setScanLocked] = React.useState(false);
+
+  React.useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+
+    return () => sub.remove();
+  }, []);
 
   React.useEffect(() => {
     if (!id || !householdId) return;
@@ -143,6 +194,7 @@ export default function UpsertMedicine() {
           manufacturerCountry: found.manufacturerCountry ?? "",
           barcode: found.barcode ?? "",
           intakeTimes: found.intakeTimes ?? "",
+          intakeMembersByTime: normalizeMembersByTime(found.intakeMembersByTime),
           expiresAt: found.expiresAt,
           remindDaysBefore: found.remindDaysBefore ?? 7,
         });
@@ -152,8 +204,47 @@ export default function UpsertMedicine() {
     })();
   }, [householdId, id, router, t]);
 
+  React.useEffect(() => {
+    if (!householdId) {
+      setHouseholdMembers([]);
+      return;
+    }
+
+    let active = true;
+
+    (async () => {
+      const members = await listHouseholdMembers(householdId);
+      if (active) setHouseholdMembers(members);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [householdId]);
+
   const setField = <K extends keyof MedicineForm>(key: K, value: MedicineForm[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const onChangeIntakeTimes = (value: string) => {
+    const validTimes = new Set(parseIntakeTimes(value));
+
+    setForm((prev) => {
+      const currentMap = normalizeMembersByTime(prev.intakeMembersByTime);
+      const nextMap = Object.fromEntries(
+        Object.entries(currentMap).filter(([time]) => validTimes.has(time))
+      ) as Record<string, string[]>;
+
+      for (const time of validTimes) {
+        if (!nextMap[time]) nextMap[time] = [];
+      }
+
+      return {
+        ...prev,
+        intakeTimes: value,
+        intakeMembersByTime: nextMap,
+      };
+    });
   };
 
   const onChangeDosageForm = (nextForm: NonNullable<MedicineForm["dosageForm"]>) => {
@@ -162,6 +253,21 @@ export default function UpsertMedicine() {
       dosageForm: nextForm,
       quantityUnit: defaultUnitByForm(nextForm),
     }));
+  };
+
+  const toggleIntakeMemberForTime = (time: string, uid: string) => {
+    setForm((prev) => {
+      const map = normalizeMembersByTime(prev.intakeMembersByTime);
+      const current = map[time] ?? [];
+      const hasUid = current.includes(uid);
+      return {
+        ...prev,
+        intakeMembersByTime: {
+          ...map,
+          [time]: hasUid ? current.filter((x) => x !== uid) : [...current, uid],
+        },
+      };
+    });
   };
 
   const openScanner = async () => {
@@ -232,10 +338,14 @@ export default function UpsertMedicine() {
     <KeyboardAvoidingView
       style={[styles.screen, { backgroundColor: colors.bg }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.container, { paddingBottom: 96 }]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        automaticallyAdjustKeyboardInsets
       >
         <View
           style={[
@@ -399,12 +509,57 @@ export default function UpsertMedicine() {
             label={t("medicine.intake")}
             value={form.intakeTimes ?? ""}
             placeholder={t("medicine.intakePlaceholder")}
-            onChangeText={(value) => setField("intakeTimes", value)}
+            onChangeText={onChangeIntakeTimes}
             colors={colors}
             theme={theme}
           />
 
           <Text style={[styles.noteHint, { color: colors.muted }]}>{t("medicine.intakeHint")}</Text>
+
+          <View style={{ marginTop: 14 }}>
+            <Text style={[styles.label, { color: colors.faint }]}>{t("medicine.intakeMembersByTime")}</Text>
+
+            {parseIntakeTimes(form.intakeTimes).length === 0 ? (
+              <Text style={[styles.noteHint, { color: colors.muted }]}>{t("medicine.intakeMembersByTimeHint")}</Text>
+            ) : householdMembers.length === 0 ? (
+              <Text style={[styles.noteHint, { color: colors.muted }]}>{t("medicine.intakeMembersHint")}</Text>
+            ) : (
+              <View style={{ gap: 10 }}>
+                {parseIntakeTimes(form.intakeTimes).map((time) => (
+                  <View key={time}>
+                    <Text style={[styles.selectHint, { color: colors.muted }]}>
+                      {t("medicine.intakeTimeSlot", { time })}
+                    </Text>
+                    <View style={styles.inlineWrap}>
+                      {householdMembers.map((member) => {
+                        const selected = Boolean(form.intakeMembersByTime?.[time]?.includes(member.uid));
+                        const name = member.displayName?.trim() || member.email || t("family.unnamed");
+
+                        return (
+                          <Pressable
+                            key={`${time}-${member.uid}`}
+                            onPress={() => toggleIntakeMemberForTime(time, member.uid)}
+                            style={({ pressed }) => [
+                              styles.chip,
+                              {
+                                borderColor: selected ? colors.primary : colors.border,
+                                backgroundColor: selected ? colors.primarySoft : colors.surface,
+                              },
+                              pressed && { opacity: 0.9 },
+                            ]}
+                          >
+                            <Text style={[styles.chipText, { color: colors.text }]} numberOfLines={1}>
+                              {name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
 
           <View style={{ marginTop: 14 }}>
             <Text style={[styles.label, { color: colors.faint }]}>{t("medicine.expiry")}</Text>
@@ -621,3 +776,4 @@ const styles = StyleSheet.create({
   },
   clearText: { fontSize: 13, fontWeight: "700" },
 });
+

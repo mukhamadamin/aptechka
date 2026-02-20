@@ -116,6 +116,18 @@ export function Chip({ label }: { label: string }) {
   return <Pill label={label} tone="default" />;
 }
 
+export function LoadingState(props: { label?: string }) {
+  const { colors } = useAppTheme();
+  const { label } = props;
+
+  return (
+    <View style={[styles.loadingWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      <ActivityIndicator color={colors.primary} />
+      {label ? <Text style={[styles.loadingText, { color: colors.muted }]}>{label}</Text> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   btn: {
     paddingVertical: 13,
@@ -151,4 +163,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pillText: { fontSize: 12, fontWeight: "800" },
+  loadingWrap: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  loadingText: { fontSize: 13, lineHeight: 18, textAlign: "center" },
 });

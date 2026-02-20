@@ -1,6 +1,19 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as React from "react";
-import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   createAndAssignHousehold,
   getHouseholdById,
@@ -13,6 +26,7 @@ import { disableSosShadeShortcut, enableSosShadeShortcut } from "../../src/notif
 import { usePreferences } from "../../src/preferences/PreferencesProvider";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 import { PrimaryButton } from "../../src/ui/components";
+import { requestPinMedicinesWidget } from "../../src/widgets/widget-pinning";
 
 function localizeError(message: string, t: (key: string, vars?: Record<string, string | number>) => string) {
   if (message.startsWith("household.")) return t(message);
@@ -20,6 +34,8 @@ function localizeError(message: string, t: (key: string, vars?: Record<string, s
 }
 
 export default function SettingsScreen() {
+  const insets = useSafeAreaInsets();
+  const scrollRef = React.useRef<ScrollView>(null);
   const { colors, theme, setTheme } = useAppTheme();
   const { user, householdId, refresh } = useHousehold();
   const { language, setLanguage, t } = useLanguage();
@@ -28,8 +44,17 @@ export default function SettingsScreen() {
   const [loggingOut, setLoggingOut] = React.useState(false);
   const [joining, setJoining] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
+  const [pinningWidget, setPinningWidget] = React.useState(false);
   const [joinCode, setJoinCode] = React.useState("");
   const [currentCode, setCurrentCode] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+
+    return () => sub.remove();
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -118,8 +143,43 @@ export default function SettingsScreen() {
     setShowSosInPanel(false);
   };
 
+  const onPinWidget = async () => {
+    if (pinningWidget) return;
+
+    setPinningWidget(true);
+    try {
+      const result = await requestPinMedicinesWidget();
+      if (result === "requested") {
+        Alert.alert(t("common.ok"), t("settings.widget.pinRequested"));
+        return;
+      }
+
+      if (result === "unavailable") {
+        Alert.alert(t("common.error"), t("settings.widget.unavailable"));
+        return;
+      }
+
+      Alert.alert(t("common.error"), t("settings.widget.unsupported"));
+    } finally {
+      setPinningWidget(false);
+    }
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
+    >
+    <ScrollView
+      ref={scrollRef}
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      contentContainerStyle={{ padding: 16, paddingTop: 12, paddingBottom: 24 + insets.bottom }}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+      automaticallyAdjustKeyboardInsets
+    >
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.h1, { color: colors.text }]}>{t("settings.title")}</Text>
         <Text style={[styles.h2, { color: colors.muted }]}>{t("settings.subtitle")}</Text>
@@ -219,6 +279,11 @@ export default function SettingsScreen() {
         </View>
 
         <View style={{ height: 16 }} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.widget.title")}</Text>
+        <Text style={[styles.optionText, { color: colors.muted }]}>{t("settings.widget.hint")}</Text>
+        <PrimaryButton title={t("settings.widget.pinButton")} onPress={onPinWidget} loading={pinningWidget} />
+
+        <View style={{ height: 16 }} />
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.household.title")}</Text>
         <Text style={[styles.optionText, { color: colors.muted }]}>
           {t("settings.household.current", { code: currentCode ?? t("settings.household.notLoaded") })}
@@ -248,12 +313,13 @@ export default function SettingsScreen() {
         <View style={{ height: 16 }} />
         <PrimaryButton title={t("settings.signout")} onPress={onLogout} loading={loggingOut} />
       </View>
-    </View>
+    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, paddingTop: 12 },
+  container: { flex: 1 },
   card: { borderRadius: 18, padding: 14, borderWidth: 1 },
   h1: { fontSize: 20, fontWeight: "900" },
   h2: { marginTop: 6, lineHeight: 20 },

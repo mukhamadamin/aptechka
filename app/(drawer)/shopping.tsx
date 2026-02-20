@@ -2,6 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import * as React from "react";
 import {
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,13 +19,14 @@ import {
   listShoppingItems,
   toggleShoppingItem,
 } from "../../src/entities/household-tools/api/tools-repository";
+import { listHouseholdMembers } from "../../src/entities/family/api/family-repository";
 import type { ShoppingItem } from "../../src/entities/household-tools/model/types";
 import { listMedicines } from "../../src/entities/medicine/api/medicine-repository";
 import { useHousehold } from "../../src/entities/session/model/use-household";
 import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 import type { Medicine } from "../../src/types/medicine";
-import { PrimaryButton } from "../../src/ui/components";
+import { LoadingState, PrimaryButton } from "../../src/ui/components";
 import { syncWidgetMedicines, syncWidgetShopping } from "../../src/widgets/widget-sync";
 
 function parseQuantity(value?: string): number | null {
@@ -34,6 +38,7 @@ function parseQuantity(value?: string): number | null {
 }
 
 export default function ShoppingScreen() {
+  const scrollRef = React.useRef<ScrollView>(null);
   const { colors, theme } = useAppTheme();
   const { householdId, user } = useHousehold();
   const { t } = useLanguage();
@@ -55,15 +60,27 @@ export default function ShoppingScreen() {
       return;
     }
 
-    const [shoppingList, medicineList] = await Promise.all([
+    const [shoppingList, medicineList, members] = await Promise.all([
       listShoppingItems(householdId),
       listMedicines(householdId),
+      listHouseholdMembers(householdId),
     ]);
+    const namesByUid = Object.fromEntries(
+      members.map((member) => [member.uid, member.displayName?.trim() || member.email || member.uid])
+    );
 
     setShopping(shoppingList);
     setMedicines(medicineList);
-    await Promise.all([syncWidgetShopping(shoppingList), syncWidgetMedicines(medicineList)]);
+    await Promise.all([syncWidgetShopping(shoppingList), syncWidgetMedicines(medicineList, namesByUid)]);
   }, [householdId]);
+
+  React.useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+
+    return () => sub.remove();
+  }, []);
 
   React.useEffect(() => {
     (async () => {
@@ -136,9 +153,18 @@ export default function ShoppingScreen() {
   };
 
   return (
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
+    >
     <ScrollView
+      ref={scrollRef}
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={{ padding: 16, paddingTop: 12, paddingBottom: 32 }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+      automaticallyAdjustKeyboardInsets
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -189,6 +215,8 @@ export default function ShoppingScreen() {
 
         {!householdId ? (
           <Text style={[styles.hint, { color: colors.muted }]}>{t("home.empty.noHouseholdText")}</Text>
+        ) : loading ? (
+          <LoadingState label={t("common.loading")} />
         ) : !loading && shopping.length === 0 ? (
           <Text style={[styles.hint, { color: colors.muted }]}>{t("assistant.shopping.empty")}</Text>
         ) : null}
@@ -243,6 +271,7 @@ export default function ShoppingScreen() {
         </View>
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

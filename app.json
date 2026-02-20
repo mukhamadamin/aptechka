@@ -1,4 +1,4 @@
-﻿{
+{
   "expo": {
     "name": "HomeAidKit",
     "slug": "HomeAidKit",
@@ -21,7 +21,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.HomeAidKit"
+      "package": "com.anonymous.HomeAidKit",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "static",
@@ -66,11 +70,19 @@
             "distPlaceholder": "com.anonymous.HomeAidKit"
           }
         }
-      ]
+      ],
+      "./plugins/with-expo-widgets-pinning"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "34a8195c-c769-4ad6-9c71-986e42b6f795"
+      }
+    },
+    "owner": "muhammdamin_2002"
   }
 }

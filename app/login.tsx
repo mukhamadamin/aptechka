@@ -2,6 +2,7 @@ import { Redirect } from "expo-router";
 import * as React from "react";
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -20,6 +21,7 @@ import { PrimaryButton } from "../src/ui/components";
 type AuthMode = "login" | "register";
 
 export default function LoginScreen() {
+  const scrollRef = React.useRef<ScrollView>(null);
   const { user, loading } = useAuth();
   const { colors, theme } = useAppTheme();
   const { t } = useLanguage();
@@ -29,6 +31,14 @@ export default function LoginScreen() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+
+    return () => sub.remove();
+  }, []);
 
   if (!loading && user) {
     return <Redirect href="/(drawer)" />;
@@ -71,10 +81,14 @@ export default function LoginScreen() {
     <KeyboardAvoidingView
       style={[styles.screen, { backgroundColor: colors.bg }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.container, { paddingBottom: 28 }]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        automaticallyAdjustKeyboardInsets
       >
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.title, { color: colors.text }]}>{t("auth.title")}</Text>

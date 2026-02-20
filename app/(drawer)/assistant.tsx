@@ -1,6 +1,9 @@
 import * as React from "react";
 import {
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -14,7 +17,7 @@ import { buildSymptomAdvice, type SymptomAdvice } from "../../src/features/sympt
 import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 import type { Medicine } from "../../src/types/medicine";
-import { Pill, PrimaryButton } from "../../src/ui/components";
+import { LoadingState, Pill, PrimaryButton } from "../../src/ui/components";
 
 function parseQuantity(value?: string): number | null {
   if (!value) return null;
@@ -37,107 +40,78 @@ function daysLeft(expiresAt?: string): number | null {
 }
 
 export default function AssistantScreen() {
+  const scrollRef = React.useRef<ScrollView>(null);
   const { colors, theme } = useAppTheme();
   const { householdId } = useHousehold();
   const { t, language } = useLanguage();
 
   const aiText = React.useMemo(
-    () =>
-      language === "ru"
-        ? {
-            title: "ИИ-помощник по симптомам",
-            subtitle:
-              "Опишите симптомы, а помощник подберет варианты из вашей аптечки и покажет риски.",
-            placeholder: "Например: температура 38.7, болит горло, сухой кашель 2 дня",
-            analyze: "Анализировать симптомы",
-            validation: "Опишите симптомы подробнее (минимум 5 символов).",
-            urgentTitle: "Внимание: возможны опасные признаки",
-            foundInKit: "Подходящие варианты из аптечки",
-            noFound: "Подходящих лекарств по симптомам в аптечке не найдено.",
-            missing: "Чего не хватает в аптечке",
-            selfcare: "Что можно сделать сейчас",
-            disclaimer:
-              "Это не диагноз и не назначение лечения. При ухудшении состояния, сильной боли, одышке, судорогах, крови или у детей/беременных обязательно обратитесь к врачу или в экстренную службу.",
-            noHousehold: "Семья не подключена. Сначала подключите household в настройках.",
-            symptoms: {
-              fever: "Температура",
-              headache: "Головная боль",
-              sore_throat: "Боль в горле",
-              cough: "Кашель",
-              runny_nose: "Насморк",
-              allergy: "Аллергия",
-              nausea: "Тошнота",
-              diarrhea: "Диарея",
-              pain: "Боль",
-              burn: "Ожог",
-            } as Record<string, string>,
-            categories: {
-              antipyretic: "Жаропонижающее",
-              painkiller: "Обезболивающее",
-              cough: "Средство от кашля",
-              throat: "Средство для горла",
-              antihistamine: "Антигистаминное",
-              antidiarrheal: "Средство от диареи",
-              rehydration: "Регидратация (ORS/Регидрон)",
-              antiemetic: "Средство от тошноты",
-              burn_care: "Средство для ожогов",
-            } as Record<string, string>,
-            redFlags: {
-              chest_pain: "Боль или давление в груди",
-              breathing: "Затруднение дыхания",
-              neuro: "Потеря сознания или судороги",
-              blood: "Кровь в симптомах",
-              high_fever: "Очень высокая температура",
-              pregnancy_child: "Беременность или младенческий возраст",
-            } as Record<string, string>,
-          }
-        : {
-            title: "AI Symptom Assistant",
-            subtitle:
-              "Describe symptoms and the assistant will match options from your kit and highlight risks.",
-            placeholder: "Example: fever 101.6F, sore throat, dry cough for 2 days",
-            analyze: "Analyze Symptoms",
-            validation: "Describe symptoms in more detail (at least 5 characters).",
-            urgentTitle: "Warning: possible red flags detected",
-            foundInKit: "Possible options from your kit",
-            noFound: "No suitable medicines found in your kit for these symptoms.",
-            missing: "What may be missing in your kit",
-            selfcare: "What you can do now",
-            disclaimer:
-              "This is not a diagnosis or a prescription. If symptoms worsen, with severe pain, breathing issues, seizures, blood, or for children/pregnancy, seek medical care or emergency services.",
-            noHousehold: "No household connected. Join household in settings first.",
-            symptoms: {
-              fever: "Fever",
-              headache: "Headache",
-              sore_throat: "Sore throat",
-              cough: "Cough",
-              runny_nose: "Runny nose",
-              allergy: "Allergy",
-              nausea: "Nausea",
-              diarrhea: "Diarrhea",
-              pain: "Pain",
-              burn: "Burn",
-            } as Record<string, string>,
-            categories: {
-              antipyretic: "Antipyretic",
-              painkiller: "Painkiller",
-              cough: "Cough remedy",
-              throat: "Throat remedy",
-              antihistamine: "Antihistamine",
-              antidiarrheal: "Anti-diarrheal",
-              rehydration: "Rehydration (ORS)",
-              antiemetic: "Anti-nausea remedy",
-              burn_care: "Burn care remedy",
-            } as Record<string, string>,
-            redFlags: {
-              chest_pain: "Chest pain or pressure",
-              breathing: "Breathing difficulty",
-              neuro: "Loss of consciousness or seizure",
-              blood: "Blood-related symptom",
-              high_fever: "Very high fever",
-              pregnancy_child: "Pregnancy or infant case",
-            } as Record<string, string>,
-          },
+    () => ({
+      title: language === "ru" ? "AI-помощник по симптомам" : "AI Symptom Assistant",
+      subtitle:
+        language === "ru"
+          ? "Опишите симптомы, и помощник подберет варианты из вашей аптечки и выделит риски."
+          : "Describe symptoms and the assistant will match options from your kit and highlight risks.",
+      placeholder:
+        language === "ru"
+          ? "Пример: температура 38.6, боль в горле, сухой кашель 2 дня"
+          : "Example: fever 101.6F, sore throat, dry cough for 2 days",
+      analyze: language === "ru" ? "Анализировать симптомы" : "Analyze Symptoms",
+      validation:
+        language === "ru"
+          ? "Опишите симптомы подробнее (минимум 5 символов)."
+          : "Describe symptoms in more detail (at least 5 characters).",
+      urgentTitle:
+        language === "ru"
+          ? "Внимание: обнаружены возможные тревожные признаки"
+          : "Warning: possible red flags detected",
+      foundInKit: language === "ru" ? "Подходящие варианты из вашей аптечки" : "Possible options from your kit",
+      noFound:
+        language === "ru"
+          ? "Подходящих лекарств в аптечке по этим симптомам не найдено."
+          : "No suitable medicines found in your kit for these symptoms.",
+      missing: language === "ru" ? "Что может не хватать в аптечке" : "What may be missing in your kit",
+      selfcare: language === "ru" ? "Что можно сделать сейчас" : "What you can do now",
+      disclaimer:
+        language === "ru"
+          ? "Это не диагноз и не назначение лечения. При ухудшении состояния, сильной боли, проблемах с дыханием, судорогах, крови, а также для детей и при беременности обратитесь за медицинской помощью."
+          : "This is not a diagnosis or a prescription. If symptoms worsen, with severe pain, breathing issues, seizures, blood, or for children/pregnancy, seek medical care or emergency services.",
+      noHousehold:
+        language === "ru"
+          ? "Семья не подключена. Сначала присоединитесь к семье в настройках."
+          : "No household connected. Join household in settings first.",
+      symptoms: {
+        fever: language === "ru" ? "Температура" : "Fever",
+        headache: language === "ru" ? "Головная боль" : "Headache",
+        sore_throat: language === "ru" ? "Боль в горле" : "Sore throat",
+        cough: language === "ru" ? "Кашель" : "Cough",
+        runny_nose: language === "ru" ? "Насморк" : "Runny nose",
+        allergy: language === "ru" ? "Аллергия" : "Allergy",
+        nausea: language === "ru" ? "Тошнота" : "Nausea",
+        diarrhea: language === "ru" ? "Диарея" : "Diarrhea",
+        pain: language === "ru" ? "Боль" : "Pain",
+        burn: language === "ru" ? "Ожог" : "Burn",
+      } as Record<string, string>,
+      categories: {
+        antipyretic: language === "ru" ? "Жаропонижающее" : "Antipyretic",
+        painkiller: language === "ru" ? "Обезболивающее" : "Painkiller",
+        cough: language === "ru" ? "Средство от кашля" : "Cough remedy",
+        throat: language === "ru" ? "Средство для горла" : "Throat remedy",
+        antihistamine: language === "ru" ? "Антигистаминное" : "Antihistamine",
+        antidiarrheal: language === "ru" ? "Противодиарейное" : "Anti-diarrheal",
+        rehydration: language === "ru" ? "Регидратация (ОРС)" : "Rehydration (ORS)",
+        antiemetic: language === "ru" ? "Средство от тошноты" : "Anti-nausea remedy",
+        burn_care: language === "ru" ? "Средство при ожогах" : "Burn care remedy",
+      } as Record<string, string>,
+      redFlags: {
+        chest_pain: language === "ru" ? "Боль или давление в груди" : "Chest pain or pressure",
+        breathing: language === "ru" ? "Затрудненное дыхание" : "Breathing difficulty",
+        neuro: language === "ru" ? "Потеря сознания или судороги" : "Loss of consciousness or seizure",
+        blood: language === "ru" ? "Симптомы с кровью" : "Blood-related symptom",
+        high_fever: language === "ru" ? "Очень высокая температура" : "Very high fever",
+        pregnancy_child: language === "ru" ? "Беременность или младенческий возраст" : "Pregnancy or infant case",
+      } as Record<string, string>,
+    }),
     [language]
   );
 
@@ -156,6 +130,14 @@ export default function AssistantScreen() {
     const medList = await listMedicines(householdId);
     setMedicines(medList);
   }, [householdId]);
+
+  React.useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+
+    return () => sub.remove();
+  }, []);
 
   React.useEffect(() => {
     (async () => {
@@ -237,9 +219,18 @@ export default function AssistantScreen() {
   );
 
   return (
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
+    >
     <ScrollView
+      ref={scrollRef}
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={{ padding: 16, paddingTop: 12, paddingBottom: 32 }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+      automaticallyAdjustKeyboardInsets
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -250,7 +241,7 @@ export default function AssistantScreen() {
         />
       }
     >
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.h1, { color: colors.text }]}>{t("assistant.title")}</Text>
         <Text style={[styles.h2, { color: colors.muted }]}>{t("assistant.subtitle")}</Text>
 
@@ -264,7 +255,7 @@ export default function AssistantScreen() {
 
       <View style={{ height: 12 }} />
 
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{aiText.title}</Text>
         <Text style={[styles.hint, { color: colors.muted }]}>{aiText.subtitle}</Text>
 
@@ -292,12 +283,10 @@ export default function AssistantScreen() {
             <Text style={[styles.tipText, { color: colors.muted }]}>{symptomAdvice.summary}</Text>
 
             {symptomAdvice.urgentFlags.length > 0 ? (
-              <View style={[styles.alertBox, { borderColor: colors.danger, backgroundColor: colors.dangerSoft }]}> 
+              <View style={[styles.alertBox, { borderColor: colors.danger, backgroundColor: colors.dangerSoft }]}>
                 <Text style={[styles.tipTitle, { color: colors.danger }]}>{aiText.urgentTitle}</Text>
                 {symptomAdvice.urgentFlags.map((flag) => (
-                  <Text key={flag} style={[styles.tipText, { color: colors.danger }]}> 
-                    • {aiText.redFlags[flag] ?? flag}
-                  </Text>
+                  <Text key={flag} style={[styles.tipText, { color: colors.danger }]}>- {aiText.redFlags[flag] ?? flag}</Text>
                 ))}
               </View>
             ) : null}
@@ -308,8 +297,8 @@ export default function AssistantScreen() {
                 <Text style={[styles.tipText, { color: colors.muted }]}>{aiText.noFound}</Text>
               ) : (
                 symptomAdvice.recommendedFromKit.map((item) => (
-                  <Text key={`${item.medicineId}-${item.forSymptom}`} style={[styles.tipText, { color: colors.text }]}> 
-                    • {item.name} - {aiText.symptoms[item.forSymptom] ?? item.forSymptom}
+                  <Text key={`${item.medicineId}-${item.forSymptom}`} style={[styles.tipText, { color: colors.text }]}>
+                    - {item.name} | {aiText.symptoms[item.forSymptom] ?? item.forSymptom}
                   </Text>
                 ))
               )}
@@ -319,9 +308,7 @@ export default function AssistantScreen() {
               <View>
                 <Text style={[styles.tipTitle, { color: colors.text }]}>{aiText.missing}</Text>
                 {symptomAdvice.missingCategories.map((item) => (
-                  <Text key={item} style={[styles.tipText, { color: colors.muted }]}> 
-                    • {aiText.categories[item] ?? item}
-                  </Text>
+                  <Text key={item} style={[styles.tipText, { color: colors.muted }]}>- {aiText.categories[item] ?? item}</Text>
                 ))}
               </View>
             ) : null}
@@ -330,9 +317,7 @@ export default function AssistantScreen() {
               <View>
                 <Text style={[styles.tipTitle, { color: colors.text }]}>{aiText.selfcare}</Text>
                 {symptomAdvice.selfCareSteps.map((item, idx) => (
-                  <Text key={`${idx}-${item}`} style={[styles.tipText, { color: colors.muted }]}> 
-                    • {item}
-                  </Text>
+                  <Text key={`${idx}-${item}`} style={[styles.tipText, { color: colors.muted }]}>- {item}</Text>
                 ))}
               </View>
             ) : null}
@@ -344,13 +329,13 @@ export default function AssistantScreen() {
 
       <View style={{ height: 12 }} />
 
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("assistant.firstAid.title")}</Text>
         <Text style={[styles.hint, { color: colors.muted }]}>{t("assistant.firstAid.subtitle")}</Text>
 
         <View style={{ gap: 8, marginTop: 10 }}>
           {firstAidItems.map((item) => (
-            <View key={item.key} style={[styles.tip, { borderColor: colors.border, backgroundColor: colors.card2 }]}> 
+            <View key={item.key} style={[styles.tip, { borderColor: colors.border, backgroundColor: colors.card2 }]}>
               <Text style={[styles.tipTitle, { color: colors.text }]}>{item.title}</Text>
               <Text style={[styles.tipText, { color: colors.muted }]}>{item.text}</Text>
             </View>
@@ -358,8 +343,9 @@ export default function AssistantScreen() {
         </View>
       </View>
 
-      {loading ? <View style={{ height: 24 }} /> : null}
+      {loading ? <LoadingState label={t("common.loading")} /> : null}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

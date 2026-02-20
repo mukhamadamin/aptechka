@@ -2,6 +2,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
   updateProfile,
   User,
 } from "firebase/auth";
@@ -61,4 +62,38 @@ export async function updateMyProfile(uid: string, data: Partial<UserProfile>): 
     ...data,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function updateMyDisplayName(uid: string, displayName: string): Promise<void> {
+  const nextName = displayName.trim();
+  if (nextName.length < 2) {
+    throw new Error("auth.nameInvalid");
+  }
+
+  if (!auth.currentUser || auth.currentUser.uid !== uid) {
+    throw new Error("auth.notAuthorized");
+  }
+
+  await updateProfile(auth.currentUser, { displayName: nextName });
+  await updateMyProfile(uid, { displayName: nextName });
+}
+
+export async function updateMyPassword(uid: string, nextPassword: string): Promise<void> {
+  if (nextPassword.length < 6) {
+    throw new Error("auth.passwordInvalid");
+  }
+
+  if (!auth.currentUser || auth.currentUser.uid !== uid) {
+    throw new Error("auth.notAuthorized");
+  }
+
+  try {
+    await updatePassword(auth.currentUser, nextPassword);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("auth/requires-recent-login")) {
+      throw new Error("auth.reloginRequired");
+    }
+    throw error;
+  }
 }

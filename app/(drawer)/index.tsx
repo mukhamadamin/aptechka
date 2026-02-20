@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Alert,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -12,16 +13,27 @@ import {
   View,
 } from "react-native";
 import {
+  addMedicineIntakeLog,
+  listMedicineIntakeLogs,
+} from "../../src/entities/medicine/api/intake-history-repository";
+import {
   deleteMedicine,
   listMedicines,
   saveMedicine,
 } from "../../src/entities/medicine/api/medicine-repository";
+import { listHouseholdMembers } from "../../src/entities/family/api/family-repository";
 import { useHousehold } from "../../src/entities/session/model/use-household";
+import {
+  buildTodayDosePlan,
+  loadTodayDoseDoneIds,
+  type PlannedDose,
+  toggleDoseDone,
+} from "../../src/features/adherence/model/dose-tracker";
 import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { cancelNotificationIds } from "../../src/notifications/notifications";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
-import type { Medicine } from "../../src/types/medicine";
-import { IconButton, Pill, PrimaryButton } from "../../src/ui/components";
+import type { Medicine, MedicineIntakeLog } from "../../src/types/medicine";
+import { IconButton, LoadingState, Pill } from "../../src/ui/components";
 import { syncWidgetMedicines } from "../../src/widgets/widget-sync";
 
 function daysLeft(expiresAt?: string) {
@@ -58,12 +70,21 @@ function formatQuantity(value?: number, unit?: string, fallback?: string): strin
   return fallback;
 }
 
+function formatTakenAt(takenAt: number, language: "ru" | "en"): string {
+  const d = new Date(takenAt);
+  if (Number.isNaN(d.getTime())) return "-";
+  return new Intl.DateTimeFormat(language === "ru" ? "ru-RU" : "en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(d);
+}
+
 type FilterMode = "all" | "expiring" | "expired" | "noExpiry" | "withNotes";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { colors } = useAppTheme();
-  const { householdId } = useHousehold();
+  const { colors, theme } = useAppTheme();
+  const { householdId, user, profile } = useHousehold();
   const { language, t } = useLanguage();
 
   const [items, setItems] = React.useState<Medicine[]>([]);
@@ -73,6 +94,19 @@ export default function HomeScreen() {
   const [filterMode, setFilterMode] = React.useState<FilterMode>("all");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [historyMedicine, setHistoryMedicine] = React.useState<Medicine | null>(null);
+  const [historyLogs, setHistoryLogs] = React.useState<MedicineIntakeLog[]>([]);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+  const [todayOpen, setTodayOpen] = React.useState(false);
+  const [todayShowAll, setTodayShowAll] = React.useState(false);
+  const [doneDoseIds, setDoneDoseIds] = React.useState<Set<string>>(new Set());
+  const [todayBusyDoseId, setTodayBusyDoseId] = React.useState<string | null>(null);
+  const [memberNamesByUid, setMemberNamesByUid] = React.useState<Record<string, string>>({});
+  const [quantityModalOpen, setQuantityModalOpen] = React.useState(false);
+  const [quantityTargetMedicine, setQuantityTargetMedicine] = React.useState<Medicine | null>(null);
+  const [quantityAction, setQuantityAction] = React.useState<"assigned" | "noPrescription" | "add">("assigned");
+  const [quantityValue, setQuantityValue] = React.useState("1");
 
   const filterLabels = React.useMemo<Record<FilterMode, string>>(
     () => ({
@@ -88,35 +122,59 @@ export default function HomeScreen() {
   const fetchData = React.useCallback(async () => {
     if (!householdId) {
       setItems([]);
+      setMemberNamesByUid({});
       return;
     }
 
-    const list = await listMedicines(householdId);
+    const [list, members] = await Promise.all([listMedicines(householdId), listHouseholdMembers(householdId)]);
+    const namesByUid = Object.fromEntries(
+      members.map((member) => [member.uid, member.displayName?.trim() || member.email || member.uid])
+    );
+
     setItems(list);
-    await syncWidgetMedicines(list);
+    setMemberNamesByUid(namesByUid);
+    await syncWidgetMedicines(list, namesByUid);
   }, [householdId]);
+
+  const loadDoseState = React.useCallback(async () => {
+    const done = await loadTodayDoseDoneIds();
+    setDoneDoseIds(done);
+  }, []);
 
   React.useEffect(() => {
     (async () => {
       try {
-        await fetchData();
+        await Promise.all([fetchData(), loadDoseState()]);
       } finally {
         setLoading(false);
       }
     })();
-  }, [fetchData]);
+  }, [fetchData, loadDoseState]);
 
   useFocusEffect(
     React.useCallback(() => {
       if (!householdId) {
         setItems([]);
+        setMemberNamesByUid({});
         return undefined;
       }
 
       let active = true;
       (async () => {
-        const list = await listMedicines(householdId);
-        if (active) setItems(list);
+        const [list, done, members] = await Promise.all([
+          listMedicines(householdId),
+          loadTodayDoseDoneIds(),
+          listHouseholdMembers(householdId),
+        ]);
+        if (active) {
+          setItems(list);
+          setDoneDoseIds(done);
+          setMemberNamesByUid(
+            Object.fromEntries(
+              members.map((member) => [member.uid, member.displayName?.trim() || member.email || member.uid])
+            )
+          );
+        }
       })();
 
       return () => {
@@ -128,7 +186,7 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await fetchData();
+      await Promise.all([fetchData(), loadDoseState()]);
     } finally {
       setRefreshing(false);
     }
@@ -153,8 +211,27 @@ export default function HomeScreen() {
     ]);
   };
 
-  const onUseOne = async (medicine: Medicine) => {
-    if (!householdId) return;
+  const onUseOne = async (
+    medicine: Medicine,
+    options?: { markDoseId?: string }
+  ): Promise<boolean> => {
+    if (!householdId || !user) return false;
+
+    const pendingMedicineDoses = todayPlan.filter(
+      (dose) => dose.medicineId === medicine.id && !doneDoseIds.has(dose.id)
+    );
+    const restrictedDoses = pendingMedicineDoses.filter((dose) => dose.targetMemberUids.length > 0);
+    const canTakeRestrictedDose = restrictedDoses.some((dose) => dose.targetMemberUids.includes(user.uid));
+
+    if (restrictedDoses.length > 0 && !canTakeRestrictedDose) {
+      Alert.alert(
+        t("common.error"),
+        language === "ru"
+          ? "Это лекарство сегодня назначено другому члену семьи."
+          : "This medicine is assigned to another family member today."
+      );
+      return false;
+    }
 
     const currentQuantity =
       typeof medicine.quantityValue === "number"
@@ -163,7 +240,7 @@ export default function HomeScreen() {
 
     if (currentQuantity === null) {
       Alert.alert(t("home.useOneErrorTitle"), t("home.useOneErrorText"));
-      return;
+      return false;
     }
 
     const nextQuantity = Math.max(0, Math.round((currentQuantity - 1) * 100) / 100);
@@ -176,7 +253,191 @@ export default function HomeScreen() {
     };
 
     await saveMedicine(householdId, updated);
+    await addMedicineIntakeLog(householdId, medicine.id, {
+      actorUid: user.uid,
+      actorName: profile?.displayName ?? user.email ?? user.uid,
+      amount: 1,
+      unit: medicine.quantityUnit,
+    });
+
+    const doseIdToMark =
+      options?.markDoseId ??
+      pendingMedicineDoses.find(
+        (dose) => dose.targetMemberUids.length === 0 || dose.targetMemberUids.includes(user.uid)
+      )?.id;
+
+    if (doseIdToMark && !doneDoseIds.has(doseIdToMark)) {
+      const next = await toggleDoseDone(doseIdToMark);
+      setDoneDoseIds(next);
+    }
+
     await fetchData();
+    return true;
+  };
+
+  const onUseOneNoPrescription = async (medicine: Medicine): Promise<boolean> => {
+    if (!householdId || !user) return false;
+
+    const currentQuantity =
+      typeof medicine.quantityValue === "number"
+        ? medicine.quantityValue
+        : parseQuantity(medicine.quantity);
+
+    if (currentQuantity === null) {
+      Alert.alert(t("home.useOneErrorTitle"), t("home.useOneErrorText"));
+      return false;
+    }
+
+    const nextQuantity = Math.max(0, Math.round((currentQuantity - 1) * 100) / 100);
+
+    const updated: Medicine = {
+      ...medicine,
+      quantityValue: nextQuantity,
+      quantity: formatQuantity(nextQuantity, medicine.quantityUnit, medicine.quantity),
+      updatedAt: Date.now(),
+    };
+
+    await saveMedicine(householdId, updated);
+    await addMedicineIntakeLog(householdId, medicine.id, {
+      actorUid: user.uid,
+      actorName: profile?.displayName ?? user.email ?? user.uid,
+      amount: 1,
+      unit: medicine.quantityUnit,
+    });
+
+    await fetchData();
+    return true;
+  };
+
+  const openQuantityModal = (medicine: Medicine, action: "assigned" | "noPrescription" | "add") => {
+    const currentQuantity =
+      typeof medicine.quantityValue === "number"
+        ? medicine.quantityValue
+        : parseQuantity(medicine.quantity);
+
+    if (action !== "add" && (currentQuantity === null || currentQuantity <= 0)) {
+      Alert.alert(t("home.useOneErrorTitle"), t("home.useOneErrorText"));
+      return;
+    }
+
+    setQuantityTargetMedicine(medicine);
+    setQuantityAction(action);
+    setQuantityValue("1");
+    setQuantityModalOpen(true);
+  };
+
+  const submitQuantityModal = async () => {
+    if (!quantityTargetMedicine || !householdId || !user) return;
+
+    const amount = Number(quantityValue.replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      Alert.alert(t("auth.checkInput"), language === "ru" ? "Введите корректное количество." : "Enter valid amount.");
+      return;
+    }
+
+    const currentQuantityRaw =
+      typeof quantityTargetMedicine.quantityValue === "number"
+        ? quantityTargetMedicine.quantityValue
+        : parseQuantity(quantityTargetMedicine.quantity);
+
+    if (quantityAction !== "add" && currentQuantityRaw === null) {
+      Alert.alert(t("home.useOneErrorTitle"), t("home.useOneErrorText"));
+      return;
+    }
+
+    const currentQuantity = currentQuantityRaw ?? 0;
+
+    if (quantityAction !== "add" && amount > currentQuantity) {
+      Alert.alert(
+        t("auth.checkInput"),
+        language === "ru"
+          ? `Нельзя списать больше, чем есть сейчас (${currentQuantity ?? 0}).`
+          : `Cannot decrement more than current quantity (${currentQuantity ?? 0}).`
+      );
+      return;
+    }
+
+    if (quantityAction === "assigned") {
+      const pendingMedicineDoses = todayPlan.filter(
+        (dose) => dose.medicineId === quantityTargetMedicine.id && !doneDoseIds.has(dose.id)
+      );
+      const restrictedDoses = pendingMedicineDoses.filter((dose) => dose.targetMemberUids.length > 0);
+      const canTakeRestrictedDose = restrictedDoses.some((dose) => dose.targetMemberUids.includes(user.uid));
+
+      if (restrictedDoses.length > 0 && !canTakeRestrictedDose) {
+        Alert.alert(
+          t("common.error"),
+          language === "ru"
+            ? "Р­С‚Рѕ Р»РµРєР°СЂСЃС‚РІРѕ СЃРµРіРѕРґРЅСЏ РЅР°Р·РЅР°С‡РµРЅРѕ РґСЂСѓРіРѕРјСѓ С‡Р»РµРЅСѓ СЃРµРјСЊРё."
+            : "This medicine is assigned to another family member today."
+        );
+        return;
+      }
+
+      const doseIdToMark = pendingMedicineDoses.find(
+        (dose) => dose.targetMemberUids.length === 0 || dose.targetMemberUids.includes(user.uid)
+      )?.id;
+      if (doseIdToMark && !doneDoseIds.has(doseIdToMark)) {
+        const next = await toggleDoseDone(doseIdToMark);
+        setDoneDoseIds(next);
+      }
+    }
+
+    const roundedAmount = Math.round(amount * 100) / 100;
+    const nextQuantity =
+      quantityAction === "add"
+        ? Math.round((currentQuantity + roundedAmount) * 100) / 100
+        : Math.max(0, Math.round((currentQuantity - roundedAmount) * 100) / 100);
+
+    const updated: Medicine = {
+      ...quantityTargetMedicine,
+      quantityValue: nextQuantity,
+      quantity: formatQuantity(nextQuantity, quantityTargetMedicine.quantityUnit, quantityTargetMedicine.quantity),
+      updatedAt: Date.now(),
+    };
+
+    await saveMedicine(householdId, updated);
+    if (quantityAction !== "add") {
+      await addMedicineIntakeLog(householdId, quantityTargetMedicine.id, {
+        actorUid: user.uid,
+        actorName: profile?.displayName ?? user.email ?? user.uid,
+        amount: roundedAmount,
+        unit: quantityTargetMedicine.quantityUnit,
+      });
+    }
+
+    await fetchData();
+    setQuantityModalOpen(false);
+    setQuantityTargetMedicine(null);
+  };
+
+  const openHistory = async (medicine: Medicine) => {
+    if (!householdId) return;
+    setHistoryMedicine(medicine);
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    try {
+      const logs = await listMedicineIntakeLogs(householdId, medicine.id, 100);
+      setHistoryLogs(logs);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const onTakeDose = async (dose: PlannedDose) => {
+    const isAssignedToCurrentUser =
+      dose.targetMemberUids.length === 0 || (user ? dose.targetMemberUids.includes(user.uid) : false);
+
+    if (todayBusyDoseId || doneDoseIds.has(dose.id) || !isAssignedToCurrentUser) return;
+    const medicine = items.find((item) => item.id === dose.medicineId);
+    if (!medicine) return;
+
+    setTodayBusyDoseId(dose.id);
+    try {
+      await onUseOne(medicine, { markDoseId: dose.id });
+    } finally {
+      setTodayBusyDoseId(null);
+    }
   };
 
   const filtered = React.useMemo(() => {
@@ -202,10 +463,47 @@ export default function HomeScreen() {
     });
   }, [items, query, filterMode]);
 
+  const resolveMemberName = React.useCallback(
+    (uid: string) => memberNamesByUid[uid],
+    [memberNamesByUid]
+  );
+
+  const todayPlan = React.useMemo(() => buildTodayDosePlan(items, resolveMemberName), [items, resolveMemberName]);
+  const pendingToday = React.useMemo(
+    () => todayPlan.filter((dose) => !doneDoseIds.has(dose.id)),
+    [todayPlan, doneDoseIds]
+  );
+  const visibleTodayDoses = React.useMemo(
+    () => (todayShowAll ? todayPlan : todayPlan.slice(0, 3)),
+    [todayPlan, todayShowAll]
+  );
+
   const renderItem = ({ item }: { item: Medicine }) => {
     const isOpen = expandedId === item.id;
     const left = daysLeft(item.expiresAt);
     const exp = formatExpiry(item.expiresAt, language);
+    const isExpired = left !== null && left < 0;
+    const isExpiringSoon = left !== null && left >= 0 && left <= 7;
+
+    const cardBackgroundColor = isExpired
+      ? theme === "dark"
+        ? "rgba(239,68,68,0.22)"
+        : "#FEE2E2"
+      : isExpiringSoon
+        ? theme === "dark"
+          ? "rgba(251,146,60,0.22)"
+          : "#FFEDD5"
+        : colors.card2;
+
+    const cardBorderColor = isExpired
+      ? theme === "dark"
+        ? "#EF4444"
+        : "#FCA5A5"
+      : isExpiringSoon
+        ? theme === "dark"
+          ? "#FB923C"
+          : "#FDBA74"
+        : colors.border;
 
     const qtyText = formatQuantity(item.quantityValue, item.quantityUnit, item.quantity);
     const qtyNumber =
@@ -240,8 +538,8 @@ export default function HomeScreen() {
         style={({ pressed }) => [
           styles.card,
           {
-            backgroundColor: colors.card2,
-            borderColor: colors.border,
+            backgroundColor: cardBackgroundColor,
+            borderColor: cardBorderColor,
           },
           pressed && { opacity: 0.94 },
         ]}
@@ -251,21 +549,44 @@ export default function HomeScreen() {
             <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
               {item.name}
             </Text>
-
-            {!isOpen ? (
-              <View style={{ marginTop: 8, gap: 8, flexDirection: "row", flexWrap: "wrap" }}>
-                {qty ? <Pill label={qty} tone="muted" /> : null}
-                {stockStatus ? <Pill label={stockStatus.label} tone={stockStatus.tone} /> : null}
-                {status ? <Pill label={status.label} tone={status.tone} /> : null}
-              </View>
-            ) : null}
           </View>
 
           <View style={styles.iconRow}>
+            <IconButton name="time-outline" onPress={() => openHistory(item)} />
+            <IconButton name="add-outline" onPress={() => openQuantityModal(item, "add")} />
             <IconButton name="create-outline" onPress={() => router.push(`/medicine/${item.id}`)} />
             <IconButton name="trash-outline" tone="danger" onPress={() => onDelete(item.id)} />
           </View>
         </View>
+
+        {!isOpen ? (
+          <View style={styles.collapsedRow}>
+            <View style={styles.collapsedPills}>
+              {qty ? <Pill label={qty} tone="muted" /> : null}
+              {stockStatus ? <Pill label={stockStatus.label} tone={stockStatus.tone} /> : null}
+              {status ? <Pill label={status.label} tone={status.tone} /> : null}
+            </View>
+            <View style={styles.quickActionsRow}>
+              <Pressable
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onUseOne(item);
+                }}
+                onLongPress={() => openQuantityModal(item, "assigned")}
+                style={({ pressed }) => [
+                  styles.quickUseInlineBtn,
+                  { backgroundColor: colors.primary, borderColor: colors.primary },
+                  pressed && { opacity: 0.9 },
+                ]}
+              >
+                <Ionicons name="checkmark" size={14} color={colors.text} />
+                <Text style={[styles.quickUseInlineText, { color: colors.text }]}>
+                  {language === "ru" ? "\u041F\u0440\u0438\u043D\u044F\u0442\u044C" : "Take"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
 
         {isOpen ? (
           <View style={{ marginTop: 12, gap: 10 }}>
@@ -277,24 +598,54 @@ export default function HomeScreen() {
               {status ? <Pill label={status.label} tone={status.tone} /> : null}
             </View>
 
-            <Pressable
-              onPress={() => onUseOne(item)}
-              style={({ pressed }) => [
-                styles.useBtn,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-                pressed && { opacity: 0.9 },
-              ]}
-            >
-              <Text style={[styles.useBtnText, { color: colors.text }]}>{t("home.useOne")}</Text>
-            </Pressable>
-
-            {item.notes ? (
+            <View style={styles.collapsedPills}>
+             {item.notes ? (
               <Text style={[styles.notes, { color: colors.faint }]} numberOfLines={6}>
                 {item.notes}
               </Text>
             ) : null}
 
             <Text style={[styles.hint, { color: colors.muted }]}>{t("home.collapse")}</Text>
+
+              <View style={styles.quickActionsRow}>
+                <Pressable
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    onUseOne(item);
+                  }}
+                  onLongPress={() => openQuantityModal(item, "assigned")}
+                  style={({ pressed }) => [
+                    styles.quickUseInlineBtn,
+                    { backgroundColor: colors.primary, borderColor: colors.primary },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                >
+                  <Ionicons name="checkmark" size={14} color={colors.text} />
+                  <Text style={[styles.quickUseInlineText, { color: colors.text }]}>
+                    {language === "ru" ? "\u041F\u0440\u0438\u043D\u044F\u0442\u044C" : "Take"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    onUseOneNoPrescription(item);
+                  }}
+                  onLongPress={() => openQuantityModal(item, "noPrescription")}
+                  style={({ pressed }) => [
+                    styles.quickMinusBtn,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                >
+                  <Ionicons name="remove" size={14} color={colors.text} />
+                  <Text style={[styles.quickUseInlineText, { color: colors.text }]}>
+                    {language === "ru" ? "\u0431\u0435\u0437 \u0440\u0435\u0446\u0435\u043F\u0442\u0430 \u043F\u0440\u0438\u043D\u044F\u0442\u044C" : "Take without Rx"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+           
           </View>
         ) : null}
       </Pressable>
@@ -304,9 +655,6 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.headerBlock, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.h1, { color: colors.text }]}>{t("home.title")}</Text>
-        <Text style={[styles.h2, { color: colors.muted }]}>{t("home.subtitle")}</Text>
-
         <View style={styles.searchRow}>
           <TextInput
             value={query}
@@ -333,7 +681,19 @@ export default function HomeScreen() {
             ]}
           >
             <Ionicons name="options-outline" size={16} color={colors.text} />
-            <Text style={[styles.filterBtnText, { color: colors.text }]}>{t("home.filter")}</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push("/medicine/new")}
+            disabled={!householdId}
+            style={({ pressed }) => [
+              styles.filterBtn,
+              { borderColor: colors.border, backgroundColor: colors.surface },
+              !householdId && { opacity: 0.45 },
+              pressed && householdId && { opacity: 0.9 },
+            ]}
+          >
+            <Ionicons name="add" size={16} color={colors.text} />
           </Pressable>
         </View>
 
@@ -361,12 +721,106 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        <View style={{ height: 12 }} />
-        <PrimaryButton
-          title={t("home.add")}
-          onPress={() => router.push("/medicine/new")}
-          disabled={!householdId}
-        />
+        <View
+          style={[
+            styles.todayCard,
+            { borderColor: colors.border, backgroundColor: colors.surface },
+          ]}
+        >
+          <Pressable
+            onPress={() =>
+              setTodayOpen((prev) => {
+                const next = !prev;
+                if (!next) setTodayShowAll(false);
+                return next;
+              })
+            }
+            style={({ pressed }) => [styles.todayHeader, pressed && { opacity: 0.9 }]}
+          >
+            <Text style={[styles.todayTitle, { color: colors.text }]}> 
+              {language === "ru" ? "\u041A \u043F\u0440\u0438\u0435\u043C\u0443 \u0441\u0435\u0433\u043E\u0434\u043D\u044F" : "To take today"}
+            </Text>
+            <Text style={[styles.todayMeta, { color: colors.muted }]}>
+              {language === "ru" ? `${pendingToday.length} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C` : `${pendingToday.length} left`}
+            </Text>
+          </Pressable>
+
+          {todayOpen &&
+            (todayPlan.length === 0 ? (
+              <Text style={[styles.todayEmpty, { color: colors.muted }]}>
+                {language === "ru"
+                  ? "\u041D\u0430 \u0441\u0435\u0433\u043E\u0434\u043D\u044F \u043D\u0435\u0442 \u0437\u0430\u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0445 \u043F\u0440\u0438\u0435\u043C\u043E\u0432."
+                  : "No scheduled doses for today."}
+              </Text>
+            ) : (
+              <View style={styles.todayList}>
+                {visibleTodayDoses.map((dose) => {
+                  const done = doneDoseIds.has(dose.id);
+                  const isAssignedToCurrentUser =
+                    dose.targetMemberUids.length === 0 || (user ? dose.targetMemberUids.includes(user.uid) : false);
+                  const now = new Date();
+                  const isOverdue = !done && dose.hour * 60 + dose.minute < now.getHours() * 60 + now.getMinutes();
+                  const statusLabel = !isAssignedToCurrentUser
+                    ? (language === "ru" ? "\u041D\u0435 \u0434\u043B\u044F \u0432\u0430\u0441" : "Not for you")
+                    : done
+                    ? (language === "ru" ? "\u041F\u0440\u0438\u043D\u044F\u0442\u043E" : "Taken")
+                    : isOverdue
+                      ? (language === "ru" ? "\u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E" : "Overdue")
+                      : (language === "ru" ? "\u041F\u0440\u0438\u043D\u044F\u0442\u044C" : "Take");
+                  const statusTone = !isAssignedToCurrentUser ? "muted" : done ? "default" : isOverdue ? "danger" : "muted";
+
+                  return (
+                    <Pressable
+                      key={dose.id}
+                      onPress={() => onTakeDose(dose)}
+                      disabled={done || todayBusyDoseId === dose.id || !isAssignedToCurrentUser}
+                      style={({ pressed }) => [
+                        styles.todayRow,
+                        {
+                          borderColor: done ? colors.primary : colors.border,
+                          backgroundColor: done ? colors.primarySoft : colors.card2,
+                        },
+                        (done || todayBusyDoseId === dose.id || !isAssignedToCurrentUser) && { opacity: 0.78 },
+                        pressed && !done && todayBusyDoseId !== dose.id && { opacity: 0.9 },
+                      ]}
+                    >
+                      <View style={styles.todayTimeWrap}>
+                        <Ionicons
+                          name={done ? "checkmark-circle" : "ellipse-outline"}
+                          size={14}
+                          color={done ? colors.primary : colors.muted}
+                        />
+                        <Text style={[styles.todayTime, { color: colors.text }]}>{dose.time}</Text>
+                      </View>
+                      <View style={styles.todayNameWrap}>
+                        <Text style={[styles.todayName, { color: colors.text }]} numberOfLines={1}>
+                          {dose.medicineName}
+                        </Text>
+                        {dose.targetMemberNames.length ? (
+                          <Text style={[styles.todayAssignees, { color: colors.muted }]} numberOfLines={1}>
+                            {dose.targetMemberNames.join(", ")}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Pill label={statusLabel} tone={statusTone} />
+                    </Pressable>
+                  );
+                })}
+                {todayPlan.length > 3 ? (
+                  <Pressable
+                    onPress={() => setTodayShowAll((prev) => !prev)}
+                    style={({ pressed }) => [styles.todayToggleBtn, { borderColor: colors.border }, pressed && { opacity: 0.88 }]}
+                  >
+                    <Text style={[styles.todayToggleText, { color: colors.text }]}>
+                      {todayShowAll
+                        ? (language === "ru" ? "\u0421\u0432\u0435\u0440\u043D\u0443\u0442\u044C" : "Collapse")
+                        : (language === "ru" ? `\u0415\u0449\u0451 ${todayPlan.length - 3}` : `${todayPlan.length - 3} more`)}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+        </View>
       </View>
 
       <View style={{ height: 12 }} />
@@ -378,8 +832,7 @@ export default function HomeScreen() {
         </View>
       ) : loading ? (
         <View style={[styles.emptyWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("common.loading")}</Text>
-          <Text style={[styles.emptyText, { color: colors.muted }]}>{t("home.loadingText")}</Text>
+          <LoadingState label={t("home.loadingText")} />
         </View>
       ) : filtered.length === 0 ? (
         <View style={[styles.emptyWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -405,6 +858,150 @@ export default function HomeScreen() {
           }
         />
       )}
+
+      <Modal
+        visible={quantityModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setQuantityModalOpen(false);
+          setQuantityTargetMedicine(null);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.qtyModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              {quantityAction === "add"
+                ? language === "ru"
+                  ? "Добавить количество"
+                  : "Add quantity"
+                : language === "ru"
+                  ? "Списать количество"
+                  : "Decrement amount"}
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.muted }]}>
+              {quantityTargetMedicine?.name ?? ""}
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.muted }]}>
+              {language === "ru"
+                ? `Сейчас: ${
+                    typeof quantityTargetMedicine?.quantityValue === "number"
+                      ? quantityTargetMedicine.quantityValue
+                      : parseQuantity(quantityTargetMedicine?.quantity) ?? 0
+                  }`
+                : `Current: ${
+                    typeof quantityTargetMedicine?.quantityValue === "number"
+                      ? quantityTargetMedicine.quantityValue
+                      : parseQuantity(quantityTargetMedicine?.quantity) ?? 0
+                  }`}
+            </Text>
+
+            <TextInput
+              value={quantityValue}
+              onChangeText={setQuantityValue}
+              keyboardType="decimal-pad"
+              placeholder={language === "ru" ? "Введите количество" : "Enter amount"}
+              placeholderTextColor="rgba(120,120,120,0.55)"
+              style={[
+                styles.qtyInput,
+                { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface },
+              ]}
+            />
+
+            <View style={styles.qtyButtonsRow}>
+              <Pressable
+                onPress={() => {
+                  setQuantityModalOpen(false);
+                  setQuantityTargetMedicine(null);
+                }}
+                style={({ pressed }) => [
+                  styles.qtyBtn,
+                  { borderColor: colors.border, backgroundColor: colors.surface },
+                  pressed && { opacity: 0.9 },
+                ]}
+              >
+                <Text style={[styles.qtyBtnText, { color: colors.text }]}>{t("common.cancel")}</Text>
+              </Pressable>
+              <Pressable
+                onPress={submitQuantityModal}
+                style={({ pressed }) => [
+                  styles.qtyBtn,
+                  { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+                  pressed && { opacity: 0.9 },
+                ]}
+              >
+                <Text style={[styles.qtyBtnText, { color: colors.text }]}>
+                  {quantityAction === "add"
+                    ? language === "ru"
+                      ? "Добавить"
+                      : "Add"
+                    : language === "ru"
+                      ? "Списать"
+                      : "Apply"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={historyOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setHistoryOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {language === "ru" ? "\u0416\u0443\u0440\u043D\u0430\u043B \u043F\u0440\u0438\u0435\u043C\u0430" : "Intake history"}
+              </Text>
+              <Pressable
+                onPress={() => setHistoryOpen(false)}
+                style={({ pressed }) => [styles.modalClose, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={[styles.modalCloseText, { color: colors.text }]}>
+                  {language === "ru" ? "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" : "Close"}
+                </Text>
+              </Pressable>
+            </View>
+
+            <Text style={[styles.modalSubtitle, { color: colors.muted }]}>
+              {historyMedicine?.name ?? ""}
+            </Text>
+
+            {historyLoading ? (
+              <LoadingState label={language === "ru" ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430..." : "Loading..."} />
+            ) : historyLogs.length === 0 ? (
+              <Text style={[styles.modalEmpty, { color: colors.muted }]}>
+                {language === "ru" ? "\u0417\u0430\u043F\u0438\u0441\u0435\u0439 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442." : "No records yet."}
+              </Text>
+            ) : (
+              <FlatList
+                data={historyLogs}
+                keyExtractor={(x) => x.id}
+                contentContainerStyle={{ paddingBottom: 8 }}
+                renderItem={({ item }) => (
+                  <View
+                    style={[
+                      styles.logItem,
+                      { borderColor: colors.border, backgroundColor: colors.card2 },
+                    ]}
+                  >
+                    <Text style={[styles.logItemTitle, { color: colors.text }]}>
+                      {item.actorName} - {item.amount} {item.unit ?? ""}
+                    </Text>
+                    <Text style={[styles.logItemMeta, { color: colors.muted }]}>
+                      {formatTakenAt(item.takenAt, language)}
+                    </Text>
+                  </View>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -412,6 +1009,15 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
   headerBlock: { borderRadius: 18, padding: 14, borderWidth: 1 },
+  appBarRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  appBarAddBtn: {
+    width: 34,
+    height: 34,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   h1: { fontSize: 20, fontWeight: "900" },
   h2: { marginTop: 6, lineHeight: 20 },
   searchRow: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 8 },
@@ -436,11 +1042,65 @@ const styles = StyleSheet.create({
   filtersWrap: { marginTop: 8, flexDirection: "row", flexWrap: "wrap", gap: 8 },
   filterChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
   filterChipText: { fontSize: 12, fontWeight: "800" },
+  todayCard: { marginTop: 10, borderWidth: 1, borderRadius: 14, padding: 10 },
+  todayHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  todayTitle: { fontSize: 14, fontWeight: "900" },
+  todayMeta: { fontSize: 12, fontWeight: "700" },
+  todayEmpty: { marginTop: 8, fontSize: 13 },
+  todayList: { marginTop: 8, gap: 6 },
+  todayRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  todayTimeWrap: { width: 62, flexDirection: "row", alignItems: "center", gap: 4 },
+  todayTime: { fontSize: 12, fontWeight: "900" },
+  todayNameWrap: { flex: 1, minWidth: 0 },
+  todayName: { fontSize: 13, fontWeight: "700" },
+  todayAssignees: { marginTop: 2, fontSize: 12 },
+  todayToggleBtn: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  todayToggleText: { fontSize: 12, fontWeight: "800" },
   card: { borderRadius: 16, padding: 12, marginBottom: 10, borderWidth: 1 },
+  quickActionsRow: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 6 },
+  quickUseInlineBtn: {
+    flexShrink: 0,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  quickMinusBtn: {
+    flexShrink: 0,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  quickUseInlineText: { fontSize: 12, fontWeight: "900" },
   rowTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   title: { fontSize: 15, fontWeight: "900" },
+  collapsedRow: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8 },
+  collapsedPills: { flex: 1, minWidth: 0, gap: 8, flexDirection: "row", flexWrap: "wrap" },
   iconRow: { flexDirection: "row", gap: 8 },
   pillsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  actionsRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   useBtn: {
     alignSelf: "flex-start",
     borderWidth: 1,
@@ -454,4 +1114,52 @@ const styles = StyleSheet.create({
   emptyWrap: { borderRadius: 18, padding: 14, borderWidth: 1 },
   emptyTitle: { fontSize: 16, fontWeight: "900" },
   emptyText: { marginTop: 6, lineHeight: 20 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.38)",
+    justifyContent: "flex-end",
+  },
+  modalCard: {
+    maxHeight: "78%",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+  },
+  qtyModalCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    marginHorizontal: 16,
+    padding: 14,
+    alignSelf: "stretch",
+    marginBottom: 120,
+  },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
+  modalTitle: { fontSize: 17, fontWeight: "900" },
+  modalSubtitle: { marginTop: 4, marginBottom: 10, lineHeight: 18 },
+  qtyInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    marginTop: 2,
+  },
+  qtyButtonsRow: { marginTop: 12, flexDirection: "row", gap: 8 },
+  qtyBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  qtyBtnText: { fontSize: 14, fontWeight: "800" },
+  modalClose: { paddingHorizontal: 8, paddingVertical: 6 },
+  modalCloseText: { fontSize: 13, fontWeight: "800" },
+  modalEmpty: { lineHeight: 20, marginTop: 6, marginBottom: 10 },
+  logItem: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8 },
+  logItemTitle: { fontSize: 14, fontWeight: "800" },
+  logItemMeta: { marginTop: 4, fontSize: 12, lineHeight: 17 },
 });
+
+
