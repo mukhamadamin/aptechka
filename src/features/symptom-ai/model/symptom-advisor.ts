@@ -1,5 +1,5 @@
-import type { Medicine } from "../../../types/medicine";
 import type { AppLanguage } from "../../../i18n/LanguageProvider";
+import type { Medicine } from "../../../types/medicine";
 
 export type SymptomTag =
   | "fever"
@@ -26,14 +26,25 @@ export type MedicineCategory =
 
 const SYMPTOM_KEYWORDS: { tag: SymptomTag; keywords: string[] }[] = [
   { tag: "fever", keywords: ["fever", "temperature", "temp", "жар", "температур"] },
-  { tag: "headache", keywords: ["headache", "migraine", "голов", "мигрень"] },
+  {
+    tag: "headache",
+    keywords: [
+      "headache",
+      "migraine",
+      "head hurts",
+      "голов",
+      "мигрен",
+      "болит голова",
+      "головная боль",
+    ],
+  },
   { tag: "sore_throat", keywords: ["sore throat", "throat", "горл", "ангин"] },
   { tag: "cough", keywords: ["cough", "кашл"] },
   { tag: "runny_nose", keywords: ["runny", "nose", "snot", "насморк", "нос залож"] },
   { tag: "allergy", keywords: ["allergy", "rash", "itch", "аллерг", "сып", "зуд"] },
   { tag: "nausea", keywords: ["nausea", "vomit", "тошн", "рвот"] },
   { tag: "diarrhea", keywords: ["diarrhea", "loose stool", "понос", "диаре"] },
-  { tag: "pain", keywords: ["pain", "ache", "бол", "ломит"] },
+  { tag: "pain", keywords: ["pain", "ache", "бол", "болит", "ломит"] },
   { tag: "burn", keywords: ["burn", "ожог"] },
 ];
 
@@ -50,10 +61,7 @@ const RED_FLAGS: { id: string; keywords: string[] }[] = [
     id: "neuro",
     keywords: ["fainted", "convulsion", "seizure", "потеря сознания", "судорог"],
   },
-  {
-    id: "blood",
-    keywords: ["blood", "кровь"],
-  },
+  { id: "blood", keywords: ["blood", "кровь"] },
   {
     id: "high_fever",
     keywords: ["40", "41", "очень высокая температура", "very high fever"],
@@ -78,15 +86,38 @@ const CATEGORY_BY_SYMPTOM: Record<SymptomTag, MedicineCategory[]> = {
 };
 
 const MED_NAME_MARKERS: Record<MedicineCategory, string[]> = {
-  antipyretic: ["paracetamol", "acetaminophen", "ибупроф", "ibuprofen", "nurofen", "панадол"],
-  painkiller: ["ibuprofen", "ketorol", "diclofenac", "парацетамол", "ибупроф", "нурофен"],
+  antipyretic: [
+    "paracetamol",
+    "acetaminophen",
+    "ibuprofen",
+    "nurofen",
+    "панадол",
+    "парацетамол",
+    "ацетаминофен",
+    "ибупроф",
+  ],
+  painkiller: [
+    "paracetamol",
+    "acetaminophen",
+    "ibuprofen",
+    "nurofen",
+    "ketorol",
+    "diclofenac",
+    "citramon",
+    "парацетамол",
+    "ибупроф",
+    "нурофен",
+    "кеторол",
+    "цитрамон",
+    "диклофен",
+  ],
   cough: ["ambroxol", "bromhex", "acetylcyste", "ацц", "амброкс", "бромгекс"],
   throat: ["strepsils", "tantum", "hexoral", "хлоргекс", "гексорал"],
   antihistamine: ["cetirizine", "loratadine", "suprastin", "цетир", "лоратад", "супраст"],
-  antidiarrheal: ["loperamide", "смекта", "smecta", "энтеросгель", "enterosgel"],
-  rehydration: ["rehydron", "регидрон", "ors"],
+  antidiarrheal: ["loperamide", "smecta", "enterosgel", "смекта", "энтеросгель"],
+  rehydration: ["rehydron", "ors", "регидрон"],
   antiemetic: ["ondansetron", "domperidone", "метоклоп", "мотилиум"],
-  burn_care: ["panthenol", "пантенол", "burn"],
+  burn_care: ["panthenol", "burn", "пантенол"],
 };
 
 const CARE_STEPS_BY_SYMPTOM: Record<AppLanguage, Record<SymptomTag, string[]>> = {
@@ -104,13 +135,13 @@ const CARE_STEPS_BY_SYMPTOM: Record<AppLanguage, Record<SymptomTag, string[]>> =
   },
   ru: {
     fever: ["Отдыхайте и пейте больше воды.", "Контролируйте температуру каждые 4-6 часов."],
-    headache: ["Уменьшите свет/шум и отдохните.", "Пейте воду и наблюдайте за динамикой боли."],
-    sore_throat: ["Пейте тёплую жидкость.", "Избегайте очень горячей/холодной еды и дыма."],
+    headache: ["Уменьшите свет и шум, отдохните.", "Пейте воду и наблюдайте за динамикой боли."],
+    sore_throat: ["Пейте тёплую жидкость.", "Избегайте очень горячей или холодной еды и дыма."],
     cough: ["Увлажняйте воздух и пейте больше жидкости.", "Следите за появлением одышки."],
     runny_nose: ["Промывайте нос солевым раствором.", "Увеличьте потребление жидкости."],
     allergy: ["Прекратите контакт с возможным аллергеном.", "Следите за отёком и дыханием."],
-    nausea: ["Пейте воду маленькими глотками или раствор для регидратации.", "Избегайте тяжёлой пищи несколько часов."],
-    diarrhea: ["Главное - регидратация.", "Следите за признаками обезвоживания."],
+    nausea: ["Пейте воду маленькими глотками.", "Избегайте тяжёлой пищи несколько часов."],
+    diarrhea: ["Главное — регидратация.", "Следите за признаками обезвоживания."],
     pain: ["Снизьте нагрузку и отдохните.", "Не комбинируйте обезболивающие без консультации."],
     burn: ["Охлаждайте место ожога водой 10-20 минут.", "Не вскрывайте пузыри."],
   },
@@ -137,6 +168,10 @@ function dedupe<T>(arr: T[]): T[] {
   return Array.from(new Set(arr));
 }
 
+function medicineSearchText(item: Medicine) {
+  return normalize([item.name, item.dosage, item.notes].filter(Boolean).join(" "));
+}
+
 export function buildSymptomAdvice(
   symptoms: string,
   medicines: Medicine[],
@@ -150,9 +185,7 @@ export function buildSymptomAdvice(
 
   const urgentFlags = RED_FLAGS.filter((item) => includesAny(text, item.keywords)).map((item) => item.id);
 
-  const requiredCategories = dedupe(
-    detectedSymptoms.flatMap((tag) => CATEGORY_BY_SYMPTOM[tag] ?? [])
-  );
+  const requiredCategories = dedupe(detectedSymptoms.flatMap((tag) => CATEGORY_BY_SYMPTOM[tag] ?? []));
 
   const recommendedFromKit: SymptomAdvice["recommendedFromKit"] = [];
   const usedMedicineIds = new Set<string>();
@@ -164,7 +197,7 @@ export function buildSymptomAdvice(
       const markers = MED_NAME_MARKERS[category] ?? [];
       const med = medicines.find((item) => {
         if (usedMedicineIds.has(item.id)) return false;
-        return includesAny(item.name.toLowerCase(), markers);
+        return includesAny(medicineSearchText(item), markers);
       });
 
       if (med) {
@@ -179,21 +212,16 @@ export function buildSymptomAdvice(
   }
 
   const coveredCategories = new Set<MedicineCategory>();
-  for (const item of recommendedFromKit) {
-    const categories = CATEGORY_BY_SYMPTOM[item.forSymptom] ?? [];
-    for (const category of categories) {
-      const markers = MED_NAME_MARKERS[category] ?? [];
-      if (includesAny(item.name.toLowerCase(), markers)) {
-        coveredCategories.add(category);
-      }
+  for (const category of requiredCategories) {
+    const markers = MED_NAME_MARKERS[category] ?? [];
+    if (medicines.some((item) => includesAny(medicineSearchText(item), markers))) {
+      coveredCategories.add(category);
     }
   }
 
   const missingCategories = requiredCategories.filter((category) => !coveredCategories.has(category));
 
-  const selfCareSteps = dedupe(
-    detectedSymptoms.flatMap((tag) => CARE_STEPS_BY_SYMPTOM[language][tag] ?? [])
-  );
+  const selfCareSteps = dedupe(detectedSymptoms.flatMap((tag) => CARE_STEPS_BY_SYMPTOM[language][tag] ?? []));
 
   const summary =
     detectedSymptoms.length === 0

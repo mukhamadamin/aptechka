@@ -26,7 +26,7 @@ import { useHousehold } from "../../src/entities/session/model/use-household";
 import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 import type { Medicine } from "../../src/types/medicine";
-import { LoadingState, PrimaryButton } from "../../src/ui/components";
+import { LoadingOverlay, LoadingState, PrimaryButton } from "../../src/ui/components";
 import { syncWidgetMedicines, syncWidgetShopping } from "../../src/widgets/widget-sync";
 
 function parseQuantity(value?: string): number | null {
@@ -46,6 +46,7 @@ export default function ShoppingScreen() {
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [addingItem, setAddingItem] = React.useState(false);
+  const [commandLoading, setCommandLoading] = React.useState(false);
 
   const [shopping, setShopping] = React.useState<ShoppingItem[]>([]);
   const [medicines, setMedicines] = React.useState<Medicine[]>([]);
@@ -110,6 +111,7 @@ export default function ShoppingScreen() {
 
     setAddingItem(true);
     try {
+      setCommandLoading(true);
       await createShoppingItem(householdId, user.uid, {
         title: newItemTitle,
         quantity: newItemQty,
@@ -117,7 +119,11 @@ export default function ShoppingScreen() {
       setNewItemTitle("");
       setNewItemQty("");
       await fetchAll();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("common.error");
+      Alert.alert(t("common.error"), message);
     } finally {
+      setCommandLoading(false);
       setAddingItem(false);
     }
   };
@@ -138,18 +144,54 @@ export default function ShoppingScreen() {
       return;
     }
 
-    await Promise.all(
-      toCreate.map((m) =>
-        createShoppingItem(householdId, user.uid, {
-          title: m.name,
-          quantity: m.quantityUnit ?? undefined,
-          priority: "high",
-        })
-      )
-    );
+    setCommandLoading(true);
+    try {
+      await Promise.all(
+        toCreate.map((m) =>
+          createShoppingItem(householdId, user.uid, {
+            title: m.name,
+            quantity: m.quantityUnit ?? undefined,
+            priority: "high",
+          })
+        )
+      );
 
-    await fetchAll();
-    Alert.alert(t("common.ok"), t("assistant.shopping.generated", { count: toCreate.length }));
+      await fetchAll();
+      Alert.alert(t("common.ok"), t("assistant.shopping.generated", { count: toCreate.length }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("common.error");
+      Alert.alert(t("common.error"), message);
+    } finally {
+      setCommandLoading(false);
+    }
+  };
+
+  const onToggleShoppingItem = async (item: ShoppingItem) => {
+    if (!householdId) return;
+    setCommandLoading(true);
+    try {
+      await toggleShoppingItem(householdId, item);
+      await fetchAll();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("common.error");
+      Alert.alert(t("common.error"), message);
+    } finally {
+      setCommandLoading(false);
+    }
+  };
+
+  const onDeleteShoppingItem = async (item: ShoppingItem) => {
+    if (!householdId) return;
+    setCommandLoading(true);
+    try {
+      await deleteShoppingItem(householdId, item.id);
+      await fetchAll();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("common.error");
+      Alert.alert(t("common.error"), message);
+    } finally {
+      setCommandLoading(false);
+    }
   };
 
   return (
@@ -228,7 +270,7 @@ export default function ShoppingScreen() {
               style={[styles.shoppingItem, { borderColor: colors.border, backgroundColor: colors.card2 }]}
             >
               <Pressable
-                onPress={() => householdId && toggleShoppingItem(householdId, item).then(fetchAll)}
+                onPress={() => onToggleShoppingItem(item)}
                 style={({ pressed }) => [
                   styles.check,
                   {
@@ -261,7 +303,7 @@ export default function ShoppingScreen() {
               </View>
 
               <Pressable
-                onPress={() => householdId && deleteShoppingItem(householdId, item.id).then(fetchAll)}
+                onPress={() => onDeleteShoppingItem(item)}
                 style={({ pressed }) => [styles.delBtn, pressed && { opacity: 0.8 }]}
               >
                 <Ionicons name="trash-outline" size={18} color={colors.danger} />
@@ -271,6 +313,7 @@ export default function ShoppingScreen() {
         </View>
       </View>
     </ScrollView>
+    <LoadingOverlay visible={commandLoading} label={t("common.loading")} />
     </KeyboardAvoidingView>
   );
 }

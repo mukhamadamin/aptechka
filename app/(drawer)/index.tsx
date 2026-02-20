@@ -33,7 +33,7 @@ import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { cancelNotificationIds } from "../../src/notifications/notifications";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 import type { Medicine, MedicineIntakeLog } from "../../src/types/medicine";
-import { IconButton, LoadingState, Pill } from "../../src/ui/components";
+import { IconButton, LoadingOverlay, LoadingState, Pill } from "../../src/ui/components";
 import { syncWidgetMedicines } from "../../src/widgets/widget-sync";
 
 function daysLeft(expiresAt?: string) {
@@ -107,6 +107,18 @@ export default function HomeScreen() {
   const [quantityTargetMedicine, setQuantityTargetMedicine] = React.useState<Medicine | null>(null);
   const [quantityAction, setQuantityAction] = React.useState<"assigned" | "noPrescription" | "add">("assigned");
   const [quantityValue, setQuantityValue] = React.useState("1");
+  const [commandLoadingCount, setCommandLoadingCount] = React.useState(0);
+
+  const runWithCommandLoading = React.useCallback(async (run: () => Promise<unknown>): Promise<unknown> => {
+    setCommandLoadingCount((prev) => prev + 1);
+    try {
+      return await run();
+    } finally {
+      setCommandLoadingCount((prev) => Math.max(0, prev - 1));
+    }
+  }, []);
+
+  const commandLoading = commandLoadingCount > 0;
 
   const filterLabels = React.useMemo<Record<FilterMode, string>>(
     () => ({
@@ -203,9 +215,16 @@ export default function HomeScreen() {
         text: t("common.delete"),
         style: "destructive",
         onPress: async () => {
-          await cancelNotificationIds(med?.notificationIds);
-          await deleteMedicine(householdId, id);
-          await fetchData();
+          try {
+            await runWithCommandLoading(async () => {
+              await cancelNotificationIds(med?.notificationIds);
+              await deleteMedicine(householdId, id);
+              await fetchData();
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : t("common.error");
+            Alert.alert(t("common.error"), message);
+          }
         },
       },
     ]);
@@ -252,27 +271,35 @@ export default function HomeScreen() {
       updatedAt: Date.now(),
     };
 
-    await saveMedicine(householdId, updated);
-    await addMedicineIntakeLog(householdId, medicine.id, {
-      actorUid: user.uid,
-      actorName: profile?.displayName ?? user.email ?? user.uid,
-      amount: 1,
-      unit: medicine.quantityUnit,
-    });
+    try {
+      await runWithCommandLoading(async () => {
+        await saveMedicine(householdId, updated);
+        await addMedicineIntakeLog(householdId, medicine.id, {
+          actorUid: user.uid,
+          actorName: profile?.displayName ?? user.email ?? user.uid,
+          amount: 1,
+          unit: medicine.quantityUnit,
+        });
 
-    const doseIdToMark =
-      options?.markDoseId ??
-      pendingMedicineDoses.find(
-        (dose) => dose.targetMemberUids.length === 0 || dose.targetMemberUids.includes(user.uid)
-      )?.id;
+        const doseIdToMark =
+          options?.markDoseId ??
+          pendingMedicineDoses.find(
+            (dose) => dose.targetMemberUids.length === 0 || dose.targetMemberUids.includes(user.uid)
+          )?.id;
 
-    if (doseIdToMark && !doneDoseIds.has(doseIdToMark)) {
-      const next = await toggleDoseDone(doseIdToMark);
-      setDoneDoseIds(next);
+        if (doseIdToMark && !doneDoseIds.has(doseIdToMark)) {
+          const next = await toggleDoseDone(doseIdToMark);
+          setDoneDoseIds(next);
+        }
+
+        await fetchData();
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("common.error");
+      Alert.alert(t("common.error"), message);
+      return false;
     }
-
-    await fetchData();
-    return true;
   };
 
   const onUseOneNoPrescription = async (medicine: Medicine): Promise<boolean> => {
@@ -297,16 +324,24 @@ export default function HomeScreen() {
       updatedAt: Date.now(),
     };
 
-    await saveMedicine(householdId, updated);
-    await addMedicineIntakeLog(householdId, medicine.id, {
-      actorUid: user.uid,
-      actorName: profile?.displayName ?? user.email ?? user.uid,
-      amount: 1,
-      unit: medicine.quantityUnit,
-    });
+    try {
+      await runWithCommandLoading(async () => {
+        await saveMedicine(householdId, updated);
+        await addMedicineIntakeLog(householdId, medicine.id, {
+          actorUid: user.uid,
+          actorName: profile?.displayName ?? user.email ?? user.uid,
+          amount: 1,
+          unit: medicine.quantityUnit,
+        });
 
-    await fetchData();
-    return true;
+        await fetchData();
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("common.error");
+      Alert.alert(t("common.error"), message);
+      return false;
+    }
   };
 
   const openQuantityModal = (medicine: Medicine, action: "assigned" | "noPrescription" | "add") => {
@@ -357,58 +392,65 @@ export default function HomeScreen() {
       return;
     }
 
-    if (quantityAction === "assigned") {
-      const pendingMedicineDoses = todayPlan.filter(
-        (dose) => dose.medicineId === quantityTargetMedicine.id && !doneDoseIds.has(dose.id)
-      );
-      const restrictedDoses = pendingMedicineDoses.filter((dose) => dose.targetMemberUids.length > 0);
-      const canTakeRestrictedDose = restrictedDoses.some((dose) => dose.targetMemberUids.includes(user.uid));
+    try {
+      await runWithCommandLoading(async () => {
+        if (quantityAction === "assigned") {
+          const pendingMedicineDoses = todayPlan.filter(
+            (dose) => dose.medicineId === quantityTargetMedicine.id && !doneDoseIds.has(dose.id)
+          );
+          const restrictedDoses = pendingMedicineDoses.filter((dose) => dose.targetMemberUids.length > 0);
+          const canTakeRestrictedDose = restrictedDoses.some((dose) => dose.targetMemberUids.includes(user.uid));
 
-      if (restrictedDoses.length > 0 && !canTakeRestrictedDose) {
-        Alert.alert(
-          t("common.error"),
-          language === "ru"
-            ? "Р­С‚Рѕ Р»РµРєР°СЂСЃС‚РІРѕ СЃРµРіРѕРґРЅСЏ РЅР°Р·РЅР°С‡РµРЅРѕ РґСЂСѓРіРѕРјСѓ С‡Р»РµРЅСѓ СЃРµРјСЊРё."
-            : "This medicine is assigned to another family member today."
-        );
-        return;
-      }
+          if (restrictedDoses.length > 0 && !canTakeRestrictedDose) {
+            Alert.alert(
+              t("common.error"),
+              language === "ru"
+                ? "Это лекарство сегодня назначено другому члену семьи."
+                : "This medicine is assigned to another family member today."
+            );
+            return;
+          }
 
-      const doseIdToMark = pendingMedicineDoses.find(
-        (dose) => dose.targetMemberUids.length === 0 || dose.targetMemberUids.includes(user.uid)
-      )?.id;
-      if (doseIdToMark && !doneDoseIds.has(doseIdToMark)) {
-        const next = await toggleDoseDone(doseIdToMark);
-        setDoneDoseIds(next);
-      }
-    }
+          const doseIdToMark = pendingMedicineDoses.find(
+            (dose) => dose.targetMemberUids.length === 0 || dose.targetMemberUids.includes(user.uid)
+          )?.id;
+          if (doseIdToMark && !doneDoseIds.has(doseIdToMark)) {
+            const next = await toggleDoseDone(doseIdToMark);
+            setDoneDoseIds(next);
+          }
+        }
 
-    const roundedAmount = Math.round(amount * 100) / 100;
-    const nextQuantity =
-      quantityAction === "add"
-        ? Math.round((currentQuantity + roundedAmount) * 100) / 100
-        : Math.max(0, Math.round((currentQuantity - roundedAmount) * 100) / 100);
+        const roundedAmount = Math.round(amount * 100) / 100;
+        const nextQuantity =
+          quantityAction === "add"
+            ? Math.round((currentQuantity + roundedAmount) * 100) / 100
+            : Math.max(0, Math.round((currentQuantity - roundedAmount) * 100) / 100);
 
-    const updated: Medicine = {
-      ...quantityTargetMedicine,
-      quantityValue: nextQuantity,
-      quantity: formatQuantity(nextQuantity, quantityTargetMedicine.quantityUnit, quantityTargetMedicine.quantity),
-      updatedAt: Date.now(),
-    };
+        const updated: Medicine = {
+          ...quantityTargetMedicine,
+          quantityValue: nextQuantity,
+          quantity: formatQuantity(nextQuantity, quantityTargetMedicine.quantityUnit, quantityTargetMedicine.quantity),
+          updatedAt: Date.now(),
+        };
 
-    await saveMedicine(householdId, updated);
-    if (quantityAction !== "add") {
-      await addMedicineIntakeLog(householdId, quantityTargetMedicine.id, {
-        actorUid: user.uid,
-        actorName: profile?.displayName ?? user.email ?? user.uid,
-        amount: roundedAmount,
-        unit: quantityTargetMedicine.quantityUnit,
+        await saveMedicine(householdId, updated);
+        if (quantityAction !== "add") {
+          await addMedicineIntakeLog(householdId, quantityTargetMedicine.id, {
+            actorUid: user.uid,
+            actorName: profile?.displayName ?? user.email ?? user.uid,
+            amount: roundedAmount,
+            unit: quantityTargetMedicine.quantityUnit,
+          });
+        }
+
+        await fetchData();
+        setQuantityModalOpen(false);
+        setQuantityTargetMedicine(null);
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("common.error");
+      Alert.alert(t("common.error"), message);
     }
-
-    await fetchData();
-    setQuantityModalOpen(false);
-    setQuantityTargetMedicine(null);
   };
 
   const openHistory = async (medicine: Medicine) => {
@@ -1002,6 +1044,7 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+      <LoadingOverlay visible={commandLoading} label={t("common.loading")} />
     </View>
   );
 }

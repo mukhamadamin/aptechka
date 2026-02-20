@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { colors } from "./theme";
 
 export function PrimaryButton(props: {
   title: string;
@@ -18,7 +19,7 @@ export function PrimaryButton(props: {
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.btn,
-        { backgroundColor: colors.primary },
+        { backgroundColor: colors.primary, },
         (disabled || loading) && { opacity: 0.55 },
         pressed && { transform: [{ scale: 0.985 }], opacity: theme === "dark" ? 0.95 : 0.9 },
       ]}
@@ -128,6 +129,22 @@ export function LoadingState(props: { label?: string }) {
   );
 }
 
+export function LoadingOverlay(props: { visible: boolean; label?: string }) {
+  const { colors } = useAppTheme();
+  const { visible, label } = props;
+
+  if (!visible) return null;
+
+  return (
+    <View style={styles.overlayBackdrop}>
+      <View style={[styles.overlayCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.muted }]}>{label ?? "Loading..."}</Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   btn: {
     paddingVertical: 13,
@@ -135,7 +152,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  btnText: { fontSize: 15, fontWeight: "900", letterSpacing: 0.2 },
+  btnText: { fontSize: 15, fontWeight: "900", letterSpacing: 0.2, color: colors.bg },
 
   ghost: {
     paddingVertical: 12,
@@ -172,4 +189,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   loadingText: { fontSize: 13, lineHeight: 18, textAlign: "center" },
+  overlayBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.32)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  overlayCard: {
+    minWidth: 180,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
 });

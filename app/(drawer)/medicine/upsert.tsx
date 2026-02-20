@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -357,6 +358,20 @@ export default function UpsertMedicine() {
             },
           ]}
         >
+          <Pressable
+            onPress={() => router.back()}
+            style={({ pressed }) => [
+              styles.backBtn,
+              { borderColor: colors.border, backgroundColor: colors.surface },
+              pressed && { opacity: 0.9 },
+            ]}
+          >
+            <Ionicons name="chevron-back" size={16} color={colors.text} />
+            <Text style={[styles.backBtnText, { color: colors.text }]}>
+              {language === "ru" ? "Назад" : "Back"}
+            </Text>
+          </Pressable>
+
           <Text style={[styles.h1, { color: colors.text }]}>
             {id ? t("medicine.title.edit") : t("medicine.title.new")}
           </Text>
@@ -716,6 +731,18 @@ const styles = StyleSheet.create({
   },
   h1: { fontSize: 20, fontWeight: "900" },
   h2: { marginTop: 8, lineHeight: 20 },
+  backBtn: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 6,
+  },
+  backBtnText: { fontSize: 13, fontWeight: "800" },
   grid: { flexDirection: "row", marginTop: 2 },
   inlineWrap: { marginTop: 8, flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
