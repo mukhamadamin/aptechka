@@ -61,19 +61,22 @@ export function IconButton(props: {
   name: React.ComponentProps<typeof Ionicons>["name"];
   onPress: () => void;
   tone?: "default" | "danger";
+  disabled?: boolean;
 }) {
   const { colors } = useAppTheme();
-  const { name, onPress, tone = "default" } = props;
+  const { name, onPress, tone = "default", disabled } = props;
 
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       style={({ pressed }) => [
         styles.iconBtn,
         {
           borderColor: tone === "danger" ? colors.dangerSoft : colors.border,
           backgroundColor: tone === "danger" ? colors.dangerSoft : colors.surface,
         },
+        disabled && { opacity: 0.5 },
         pressed && { opacity: 0.85 },
       ]}
     >

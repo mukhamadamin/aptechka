@@ -34,6 +34,7 @@ export async function registerWithEmail(params: {
       email: credential.user.email,
       displayName: credential.user.displayName ?? displayName?.trim() ?? null,
       householdId: household.id,
+      subscriptionActive: false,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     } satisfies UserProfile,

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useRouter } from "expo-router";
 import {
   Alert,
   Keyboard,
@@ -40,10 +41,12 @@ function daysLeft(expiresAt?: string): number | null {
 }
 
 export default function AssistantScreen() {
+  const router = useRouter();
   const scrollRef = React.useRef<ScrollView>(null);
   const { colors, theme } = useAppTheme();
-  const { householdId } = useHousehold();
+  const { householdId, profile } = useHousehold();
   const { t, language } = useLanguage();
+  const hasSubscription = profile?.subscriptionActive === true;
 
   const aiText = React.useMemo(
     () => ({
@@ -122,14 +125,14 @@ export default function AssistantScreen() {
   const [symptomAdvice, setSymptomAdvice] = React.useState<SymptomAdvice | null>(null);
 
   const fetchAll = React.useCallback(async () => {
-    if (!householdId) {
+    if (!householdId || !hasSubscription) {
       setMedicines([]);
       return;
     }
 
     const medList = await listMedicines(householdId);
     setMedicines(medList);
-  }, [householdId]);
+  }, [hasSubscription, householdId]);
 
   React.useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidHide", () => {
@@ -217,6 +220,19 @@ export default function AssistantScreen() {
     ],
     [t]
   );
+
+  if (!hasSubscription) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.bg, padding: 16, paddingTop: 12 }]}>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.h1, { color: colors.text }]}>{t("subscription.requiredTitle")}</Text>
+          <Text style={[styles.h2, { color: colors.muted }]}>{t("subscription.requiredFeatureAssistant")}</Text>
+          <View style={{ height: 12 }} />
+          <PrimaryButton title={t("subscription.goToSettings")} onPress={() => router.push("/settings")} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView

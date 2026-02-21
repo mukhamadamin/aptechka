@@ -86,6 +86,7 @@ export default function HomeScreen() {
   const { colors, theme } = useAppTheme();
   const { householdId, user, profile } = useHousehold();
   const { language, t } = useLanguage();
+  const hasSubscription = profile?.subscriptionActive === true;
 
   const [items, setItems] = React.useState<Medicine[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -145,7 +146,7 @@ export default function HomeScreen() {
 
     setItems(list);
     setMemberNamesByUid(namesByUid);
-    await syncWidgetMedicines(list, namesByUid);
+    await syncWidgetMedicines(householdId, list, namesByUid);
   }, [householdId]);
 
   const loadDoseState = React.useCallback(async () => {
@@ -455,6 +456,10 @@ export default function HomeScreen() {
 
   const openHistory = async (medicine: Medicine) => {
     if (!householdId) return;
+    if (!hasSubscription) {
+      Alert.alert(t("subscription.requiredTitle"), t("subscription.requiredFeatureHistory"));
+      return;
+    }
     setHistoryMedicine(medicine);
     setHistoryOpen(true);
     setHistoryLoading(true);
@@ -594,7 +599,11 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.iconRow}>
-            <IconButton name="time-outline" onPress={() => openHistory(item)} />
+            <IconButton
+              name={hasSubscription ? "time-outline" : "lock-closed-outline"}
+              onPress={() => openHistory(item)}
+              disabled={!hasSubscription}
+            />
             <IconButton name="add-outline" onPress={() => openQuantityModal(item, "add")} />
             <IconButton name="create-outline" onPress={() => router.push(`/medicine/${item.id}`)} />
             <IconButton name="trash-outline" tone="danger" onPress={() => onDelete(item.id)} />

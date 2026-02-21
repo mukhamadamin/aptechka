@@ -73,6 +73,7 @@ export async function createHouseholdMemberAccount(params: {
       email: credential.user.email ?? email,
       displayName: credential.user.displayName ?? displayName,
       householdId: params.householdId,
+      subscriptionActive: false,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };

@@ -2,6 +2,9 @@
   <string name="widget_empty">No items yet</string>
   <string name="widget_medicines_title">To take today</string>
   <string name="widget_shopping_title">Shopping</string>
-  <string name="widget_medicines_desc">Your today intake widget</string>
+  <string name="widget_subtitle_tap_open">Tap item to open app</string>
+  <string name="widget_action_take">Take</string>
+  <string name="widget_action_done">Done</string>
+  <string name="widget_medicines_desc">Your medicines list widget</string>
   <string name="widget_shopping_desc">Your shopping list widget</string>
 </resources>

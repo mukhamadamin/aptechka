@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useRouter } from "expo-router";
 import {
   Alert,
   FlatList,
@@ -58,10 +59,12 @@ function getInitials(name: string) {
 }
 
 export default function ChatScreen() {
+  const router = useRouter();
   const { colors, theme } = useAppTheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const { householdId, user, profile } = useHousehold();
+  const hasSubscription = profile?.subscriptionActive === true;
   const [messages, setMessages] = React.useState<HouseholdMessage[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [sending, setSending] = React.useState(false);
@@ -101,7 +104,7 @@ export default function ChatScreen() {
   );
 
   React.useEffect(() => {
-    if (!householdId) {
+    if (!householdId || !hasSubscription) {
       setMessages([]);
       setLoading(false);
       return;
@@ -118,7 +121,7 @@ export default function ChatScreen() {
     );
 
     return unsub;
-  }, [householdId]);
+  }, [hasSubscription, householdId]);
 
   React.useEffect(() => {
     if (messages.length === 0) return;
@@ -183,7 +186,23 @@ export default function ChatScreen() {
 
         <View style={{ height: 12 }} />
 
-        {!householdId ? (
+        {!hasSubscription ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("subscription.requiredTitle")}</Text>
+            <Text style={[styles.emptyText, { color: colors.muted }]}>{t("subscription.requiredFeatureChat")}</Text>
+            <View style={{ height: 12 }} />
+            <Pressable
+              onPress={() => router.push("/settings")}
+              style={({ pressed }) => [
+                styles.paywallBtn,
+                { backgroundColor: colors.primary },
+                pressed && { opacity: 0.88 },
+              ]}
+            >
+              <Text style={styles.paywallBtnText}>{t("subscription.goToSettings")}</Text>
+            </Pressable>
+          </View>
+        ) : !householdId ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>{t("chat.empty.noHousehold")}</Text>
             <Text style={[styles.emptyText, { color: colors.muted }]}>{t("chat.empty.noHouseholdText")}</Text>
@@ -382,4 +401,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendIcon: { marginLeft: 1 },
+  paywallBtn: {
+    borderRadius: 12,
+    minHeight: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  paywallBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
 });

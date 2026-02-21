@@ -1,10 +1,10 @@
 import * as React from "react";
 import {
   Alert,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -19,7 +19,7 @@ import type { UserProfile } from "../../src/entities/session/model/types";
 import { useHousehold } from "../../src/entities/session/model/use-household";
 import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
-import { LoadingState, Pill, PrimaryButton } from "../../src/ui/components";
+import { GhostButton, LoadingState, Pill, PrimaryButton } from "../../src/ui/components";
 
 function localizeError(message: string, t: (key: string, vars?: Record<string, string | number>) => string) {
   if (message.startsWith("family.memberCreate.")) return t(message);
@@ -29,7 +29,7 @@ function localizeError(message: string, t: (key: string, vars?: Record<string, s
 export default function FamilyScreen() {
   const { colors, theme } = useAppTheme();
   const { householdId, user } = useHousehold();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [members, setMembers] = React.useState<UserProfile[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -39,6 +39,7 @@ export default function FamilyScreen() {
   const [memberEmail, setMemberEmail] = React.useState("");
   const [memberPassword, setMemberPassword] = React.useState("");
   const [creating, setCreating] = React.useState(false);
+  const [addMemberOpen, setAddMemberOpen] = React.useState(false);
 
   const isOwner = Boolean(user?.uid && ownerUid && user.uid === ownerUid);
 
@@ -102,6 +103,7 @@ export default function FamilyScreen() {
       setMemberName("");
       setMemberEmail("");
       setMemberPassword("");
+      setAddMemberOpen(false);
       await fetchData();
       Alert.alert(t("common.ok"), t("family.memberCreate.success", { email }));
     } catch (error) {
@@ -113,13 +115,32 @@ export default function FamilyScreen() {
     }
   };
 
+  React.useEffect(() => {
+    if (!isOwner) {
+      setAddMemberOpen(false);
+    }
+  }, [isOwner]);
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.bg }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
-      <View style={[styles.containerInner, { backgroundColor: colors.bg }]}>
+      <ScrollView
+        style={[styles.containerInner, { backgroundColor: colors.bg }]}
+        contentContainerStyle={{ padding: 16, paddingTop: 12, paddingBottom: 24 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.card}
+          />
+        }
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={[styles.header, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.h1, { color: colors.text }]}>{t("family.title")}</Text>
         <Text style={[styles.h2, { color: colors.muted }]}>{t("family.subtitle")}</Text>
@@ -134,36 +155,54 @@ export default function FamilyScreen() {
 
           {isOwner ? (
             <>
-              <Field
-                label={t("auth.name")}
-                value={memberName}
-                placeholder={t("auth.namePlaceholder")}
-                onChangeText={setMemberName}
-                colors={colors}
-                theme={theme}
-              />
-              <Field
-                label="Email"
-                value={memberEmail}
-                placeholder="name@example.com"
-                onChangeText={setMemberEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                colors={colors}
-                theme={theme}
-              />
-              <Field
-                label={t("auth.password")}
-                value={memberPassword}
-                placeholder={t("auth.passwordPlaceholder")}
-                onChangeText={setMemberPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                colors={colors}
-                theme={theme}
-              />
-              <View style={{ height: 12 }} />
-              <PrimaryButton title={t("family.memberCreate.action")} onPress={onCreateMember} loading={creating} />
+              {!addMemberOpen ? (
+                <>
+                  <View style={{ height: 10 }} />
+                  <PrimaryButton
+                    title={language === "ru" ? "Добавить члена семьи" : "Add family member"}
+                    onPress={() => setAddMemberOpen(true)}
+                  />
+                </>
+              ) : (
+                <>
+                  <Field
+                    label={t("auth.name")}
+                    value={memberName}
+                    placeholder={t("auth.namePlaceholder")}
+                    onChangeText={setMemberName}
+                    colors={colors}
+                    theme={theme}
+                  />
+                  <Field
+                    label="Email"
+                    value={memberEmail}
+                    placeholder="name@example.com"
+                    onChangeText={setMemberEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    colors={colors}
+                    theme={theme}
+                  />
+                  <Field
+                    label={t("auth.password")}
+                    value={memberPassword}
+                    placeholder={t("auth.passwordPlaceholder")}
+                    onChangeText={setMemberPassword}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    colors={colors}
+                    theme={theme}
+                  />
+                  <View style={{ height: 12 }} />
+                  <PrimaryButton title={t("family.memberCreate.action")} onPress={onCreateMember} loading={creating} />
+                  <View style={{ height: 8 }} />
+                  <GhostButton
+                    title={language === "ru" ? "Скрыть форму" : "Hide form"}
+                    onPress={() => setAddMemberOpen(false)}
+                    disabled={creating}
+                  />
+                </>
+              )}
             </>
           ) : null}
         </View>
@@ -186,52 +225,38 @@ export default function FamilyScreen() {
           <Text style={[styles.emptyText, { color: colors.muted }]}>{t("family.empty.noneText")}</Text>
         </View>
       ) : (
-        <FlatList
-          data={members}
-          keyExtractor={(item) => item.uid}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-              progressBackgroundColor={colors.card}
-            />
-          }
-          renderItem={({ item }) => {
-            const title = item.displayName?.trim() || item.email || t("family.unnamed");
-            const subtitle = item.email ?? t("family.noEmail");
-            const isYou = item.uid === user?.uid;
-            const isMemberOwner = item.uid === ownerUid;
+        members.map((item) => {
+          const title = item.displayName?.trim() || item.email || t("family.unnamed");
+          const subtitle = item.email ?? t("family.noEmail");
+          const isYou = item.uid === user?.uid;
+          const isMemberOwner = item.uid === ownerUid;
 
-            return (
-              <View style={[styles.card, { backgroundColor: colors.card2, borderColor: colors.border }]}>
-                <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
-                  {title}
-                </Text>
-                <Text style={[styles.sub, { color: colors.muted }]} numberOfLines={1}>
-                  {subtitle}
-                </Text>
-                {isYou || isMemberOwner ? (
-                  <View style={[styles.badges, { marginTop: 8 }]}>
-                    {isYou ? <Pill label={t("family.you")} tone="default" /> : null}
-                    {isMemberOwner ? <Pill label={t("family.owner")} tone="muted" /> : null}
-                  </View>
-                ) : null}
-              </View>
-            );
-          }}
-        />
+          return (
+            <View key={item.uid} style={[styles.card, { backgroundColor: colors.card2, borderColor: colors.border }]}>
+              <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+                {title}
+              </Text>
+              <Text style={[styles.sub, { color: colors.muted }]} numberOfLines={1}>
+                {subtitle}
+              </Text>
+              {isYou || isMemberOwner ? (
+                <View style={[styles.badges, { marginTop: 8 }]}>
+                  {isYou ? <Pill label={t("family.you")} tone="default" /> : null}
+                  {isMemberOwner ? <Pill label={t("family.owner")} tone="muted" /> : null}
+                </View>
+              ) : null}
+            </View>
+          );
+        })
       )}
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  containerInner: { flex: 1, padding: 16, paddingTop: 12 },
+  containerInner: { flex: 1 },
   header: { borderRadius: 18, padding: 14, borderWidth: 1 },
   h1: { fontSize: 20, fontWeight: "900" },
   h2: { marginTop: 6, lineHeight: 20 },

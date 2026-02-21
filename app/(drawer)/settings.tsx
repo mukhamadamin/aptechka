@@ -20,7 +20,7 @@ import {
   joinHouseholdByCode,
 } from "../../src/entities/household/api/household-repository";
 import { useHousehold } from "../../src/entities/session/model/use-household";
-import { logout } from "../../src/features/auth/api/auth-service";
+import { logout, updateMyProfile } from "../../src/features/auth/api/auth-service";
 import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { disableSosShadeShortcut, enableSosShadeShortcut } from "../../src/notifications/sos-shortcut";
 import { usePreferences } from "../../src/preferences/PreferencesProvider";
@@ -37,16 +37,29 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
   const { colors, theme, setTheme } = useAppTheme();
-  const { user, householdId, refresh } = useHousehold();
+  const { user, profile, householdId, refresh } = useHousehold();
   const { language, setLanguage, t } = useLanguage();
   const { showSosInPanel, setShowSosInPanel } = usePreferences();
 
   const [loggingOut, setLoggingOut] = React.useState(false);
   const [joining, setJoining] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
+  const [updatingSubscription, setUpdatingSubscription] = React.useState(false);
   const [pinningWidget, setPinningWidget] = React.useState(false);
   const [joinCode, setJoinCode] = React.useState("");
   const [currentCode, setCurrentCode] = React.useState<string | null>(null);
+  const ui = React.useMemo(
+    () => ({
+      interface: language === "ru" ? "Интерфейс" : "Interface",
+      access: language === "ru" ? "Доступ" : "Access",
+      homeScreen: language === "ru" ? "Главный экран" : "Home Screen",
+      household: language === "ru" ? "Семья" : "Household",
+      account: language === "ru" ? "Аккаунт" : "Account",
+      connected: language === "ru" ? "Подключено" : "Connected",
+      notConnected: language === "ru" ? "Не подключено" : "Not connected",
+    }),
+    [language]
+  );
 
   React.useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidHide", () => {
@@ -127,6 +140,27 @@ export default function SettingsScreen() {
     }
   };
 
+  const subscriptionActive = profile?.subscriptionActive === true;
+
+  const onToggleSubscription = async () => {
+    if (!user) return;
+
+    setUpdatingSubscription(true);
+    try {
+      await updateMyProfile(user.uid, { subscriptionActive: !subscriptionActive });
+      await refresh();
+      Alert.alert(
+        t("common.ok"),
+        !subscriptionActive ? t("subscription.activated") : t("subscription.deactivated")
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("subscription.updateFail");
+      Alert.alert(t("common.error"), message);
+    } finally {
+      setUpdatingSubscription(false);
+    }
+  };
+
   const onToggleSos = async (next: boolean) => {
     if (next) {
       const ok = await enableSosShadeShortcut();
@@ -180,16 +214,19 @@ export default function SettingsScreen() {
       keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
       automaticallyAdjustKeyboardInsets
     >
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.headerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.h1, { color: colors.text }]}>{t("settings.title")}</Text>
         <Text style={[styles.h2, { color: colors.muted }]}>{t("settings.subtitle")}</Text>
+      </View>
 
-        <View style={{ height: 12 }} />
+      <View style={{ height: 12 }} />
 
+      <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{ui.interface}</Text>
         <Pressable
           onPress={() => setTheme("dark")}
           style={({ pressed }) => [
-            styles.option,
+            styles.choiceBtn,
             {
               borderColor: theme === "dark" ? colors.primary : colors.border,
               backgroundColor: theme === "dark" ? colors.primarySoft : colors.surface,
@@ -197,17 +234,15 @@ export default function SettingsScreen() {
             pressed && { opacity: 0.9 },
           ]}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.optionTitle, { color: colors.text }]}>{t("settings.theme.dark")}</Text>
-            <Text style={[styles.optionText, { color: colors.muted }]}>{t("settings.theme.darkDesc")}</Text>
-          </View>
+          <Text style={[styles.choiceTitle, { color: colors.text }]}>{t("settings.theme.dark")}</Text>
+          <Text style={[styles.choiceText, { color: colors.muted }]}>{t("settings.theme.darkDesc")}</Text>
           {theme === "dark" ? <Ionicons name="checkmark-outline" size={22} color={colors.text} /> : null}
         </Pressable>
 
         <Pressable
           onPress={() => setTheme("light")}
           style={({ pressed }) => [
-            styles.option,
+            styles.choiceBtn,
             {
               borderColor: theme === "light" ? colors.primary : colors.border,
               backgroundColor: theme === "light" ? colors.primarySoft : colors.surface,
@@ -215,21 +250,17 @@ export default function SettingsScreen() {
             pressed && { opacity: 0.9 },
           ]}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.optionTitle, { color: colors.text }]}>{t("settings.theme.light")}</Text>
-            <Text style={[styles.optionText, { color: colors.muted }]}>{t("settings.theme.lightDesc")}</Text>
-          </View>
+          <Text style={[styles.choiceTitle, { color: colors.text }]}>{t("settings.theme.light")}</Text>
+          <Text style={[styles.choiceText, { color: colors.muted }]}>{t("settings.theme.lightDesc")}</Text>
           {theme === "light" ? <Ionicons name="checkmark-outline" size={22} color={colors.text} /> : null}
         </Pressable>
 
-        <View style={{ height: 16 }} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.lang.title")}</Text>
-
+        <Text style={[styles.blockLabel, { color: colors.faint }]}>{t("settings.lang.title")}</Text>
         <View style={styles.langRow}>
           <Pressable
             onPress={() => setLanguage("ru")}
             style={({ pressed }) => [
-              styles.langBtn,
+              styles.segmentBtn,
               {
                 borderColor: language === "ru" ? colors.primary : colors.border,
                 backgroundColor: language === "ru" ? colors.primarySoft : colors.surface,
@@ -237,13 +268,13 @@ export default function SettingsScreen() {
               pressed && { opacity: 0.9 },
             ]}
           >
-            <Text style={[styles.langText, { color: colors.text }]}>{t("settings.lang.ru")}</Text>
+            <Text style={[styles.segmentText, { color: colors.text }]}>{t("settings.lang.ru")}</Text>
           </Pressable>
 
           <Pressable
             onPress={() => setLanguage("en")}
             style={({ pressed }) => [
-              styles.langBtn,
+              styles.segmentBtn,
               {
                 borderColor: language === "en" ? colors.primary : colors.border,
                 backgroundColor: language === "en" ? colors.primarySoft : colors.surface,
@@ -251,15 +282,61 @@ export default function SettingsScreen() {
               pressed && { opacity: 0.9 },
             ]}
           >
-            <Text style={[styles.langText, { color: colors.text }]}>{t("settings.lang.en")}</Text>
+            <Text style={[styles.segmentText, { color: colors.text }]}>{t("settings.lang.en")}</Text>
           </Pressable>
         </View>
+      </View>
 
-        <View style={{ height: 16 }} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.sos.title")}</Text>
+      <View style={{ height: 12 }} />
+
+      <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{ui.access}</Text>
         <View
           style={[
-            styles.option,
+            styles.optionRow,
+            {
+              borderColor: subscriptionActive ? colors.primary : colors.border,
+              backgroundColor: subscriptionActive ? colors.primarySoft : colors.surface,
+            },
+          ]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.optionTitle, { color: colors.text }]}>
+              {subscriptionActive ? t("subscription.statusActive") : t("subscription.statusInactive")}
+            </Text>
+            <Text style={[styles.optionText, { color: colors.muted }]}>{t("subscription.description")}</Text>
+          </View>
+          <Ionicons
+            name={subscriptionActive ? "checkmark-circle" : "lock-closed-outline"}
+            size={22}
+            color={subscriptionActive ? colors.primary : colors.muted}
+          />
+        </View>
+        <PrimaryButton
+          title={subscriptionActive ? t("subscription.manageDeactivate") : t("subscription.manageActivate")}
+          onPress={onToggleSubscription}
+          loading={updatingSubscription}
+        />
+      </View>
+
+      <View style={{ height: 12 }} />
+
+      <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{ui.homeScreen}</Text>
+
+        <View style={[styles.optionRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.optionTitle, { color: colors.text }]}>{t("settings.widget.title")}</Text>
+            <Text style={[styles.optionText, { color: colors.muted }]}>{t("settings.widget.hint")}</Text>
+          </View>
+        </View>
+        <PrimaryButton title={t("settings.widget.pinButton")} onPress={onPinWidget} loading={pinningWidget} />
+
+        <View style={{ height: 10 }} />
+
+        <View
+          style={[
+            styles.optionRow,
             {
               borderColor: colors.border,
               backgroundColor: colors.surface,
@@ -277,25 +354,44 @@ export default function SettingsScreen() {
             thumbColor={colors.card}
           />
         </View>
+      </View>
 
-        <View style={{ height: 16 }} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.widget.title")}</Text>
-        <Text style={[styles.optionText, { color: colors.muted }]}>{t("settings.widget.hint")}</Text>
-        <PrimaryButton title={t("settings.widget.pinButton")} onPress={onPinWidget} loading={pinningWidget} />
+      <View style={{ height: 12 }} />
 
-        <View style={{ height: 16 }} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("settings.household.title")}</Text>
-        <Text style={[styles.optionText, { color: colors.muted }]}>
-          {t("settings.household.current", { code: currentCode ?? t("settings.household.notLoaded") })}
-        </Text>
+      <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{ui.household}</Text>
+        <View
+          style={[
+            styles.optionRow,
+            {
+              borderColor: householdId ? colors.primary : colors.border,
+              backgroundColor: householdId ? colors.primarySoft : colors.surface,
+            },
+          ]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.optionTitle, { color: colors.text }]}>
+              {householdId ? ui.connected : ui.notConnected}
+            </Text>
+            <Text style={[styles.optionText, { color: colors.muted }]}>
+              {t("settings.household.current", { code: currentCode ?? t("settings.household.notLoaded") })}
+            </Text>
+          </View>
+          <Ionicons
+            name={householdId ? "people-circle-outline" : "warning-outline"}
+            size={22}
+            color={householdId ? colors.primary : colors.muted}
+          />
+        </View>
 
         {!householdId ? (
           <>
-            <View style={{ height: 10 }} />
+            <View style={{ height: 8 }} />
             <PrimaryButton title={t("settings.household.create")} onPress={onCreateHousehold} loading={creating} />
           </>
         ) : null}
 
+        <Text style={[styles.blockLabel, { color: colors.faint }]}>{t("settings.household.join")}</Text>
         <TextInput
           value={joinCode}
           onChangeText={setJoinCode}
@@ -309,8 +405,12 @@ export default function SettingsScreen() {
         />
 
         <PrimaryButton title={t("settings.household.join")} onPress={onJoin} loading={joining} />
+      </View>
 
-        <View style={{ height: 16 }} />
+      <View style={{ height: 12 }} />
+
+      <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{ui.account}</Text>
         <PrimaryButton title={t("settings.signout")} onPress={onLogout} loading={loggingOut} />
       </View>
     </ScrollView>
@@ -320,10 +420,11 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  card: { borderRadius: 18, padding: 14, borderWidth: 1 },
+  headerCard: { borderRadius: 18, padding: 14, borderWidth: 1 },
+  sectionCard: { borderRadius: 18, padding: 14, borderWidth: 1 },
   h1: { fontSize: 20, fontWeight: "900" },
   h2: { marginTop: 6, lineHeight: 20 },
-  option: {
+  optionRow: {
     marginTop: 10,
     borderWidth: 1,
     borderRadius: 16,
@@ -332,18 +433,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  choiceBtn: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 4,
+  },
+  choiceTitle: { fontSize: 15, fontWeight: "900" },
+  choiceText: { lineHeight: 18, marginRight: 24 },
   optionTitle: { fontSize: 15, fontWeight: "900" },
   optionText: { marginTop: 4, lineHeight: 18 },
-  sectionTitle: { marginTop: 8, fontSize: 16, fontWeight: "900" },
+  sectionTitle: { fontSize: 16, fontWeight: "900" },
+  blockLabel: { marginTop: 12, marginBottom: 4, fontSize: 12, fontWeight: "800", letterSpacing: 0.2 },
   langRow: { marginTop: 10, flexDirection: "row", gap: 8 },
-  langBtn: {
+  segmentBtn: {
     flex: 1,
     borderWidth: 1,
     borderRadius: 14,
     paddingVertical: 11,
     alignItems: "center",
   },
-  langText: { fontSize: 14, fontWeight: "800" },
+  segmentText: { fontSize: 14, fontWeight: "800" },
   input: {
     marginTop: 10,
     marginBottom: 10,

@@ -5,15 +5,22 @@ import type { ShoppingItem } from "../entities/household-tools/model/types";
 import { buildTodayDosePlan } from "../features/adherence/model/dose-tracker";
 import type { Medicine } from "../types/medicine";
 
+type WidgetListItem = {
+  id: string;
+  text: string;
+};
+
 type WidgetPayload = {
-  shopping: string[];
-  medicines: string[];
+  householdId: string | null;
+  shopping: WidgetListItem[];
+  medicines: WidgetListItem[];
   updatedAt: number;
 };
 
 const KEY = "home_pharmacy_widget_payload_v1";
 
 const EMPTY_PAYLOAD: WidgetPayload = {
+  householdId: null,
   shopping: [],
   medicines: [],
   updatedAt: Date.now(),
@@ -32,30 +39,69 @@ function canUseNativeWidgetsModule() {
   return true;
 }
 
-function medicineLines(input: Medicine[], memberNamesByUid?: Record<string, string>): string[] {
+function medicineItems(input: Medicine[], memberNamesByUid?: Record<string, string>): WidgetListItem[] {
+  const byId = new Map(input.map((item) => [item.id, item]));
   const todayPlan = buildTodayDosePlan(input, (uid) => memberNamesByUid?.[uid]);
+  const seen = new Set<string>();
 
-  return todayPlan.slice(0, 8).map((dose) => {
-    const who = dose.targetMemberNames.length ? ` - ${dose.targetMemberNames.join(", ")}` : "";
-    return `${dose.time} ${dose.medicineName}${who}`;
-  });
+  return todayPlan
+    .map((dose) => {
+      const medicine = byId.get(dose.medicineId);
+      if (!medicine || seen.has(medicine.id)) return null;
+      seen.add(medicine.id);
+
+      const who = dose.targetMemberNames.length ? ` - ${dose.targetMemberNames.join(", ")}` : "";
+      return {
+        id: medicine.id,
+        text: `${dose.time} ${dose.medicineName}${who}`,
+      } satisfies WidgetListItem;
+    })
+    .filter((item): item is WidgetListItem => item !== null)
+    .slice(0, 6);
 }
 
-function shoppingLines(input: ShoppingItem[]): string[] {
+function shoppingItems(input: ShoppingItem[]): WidgetListItem[] {
   return input
     .filter((item) => !item.done)
-    .slice(0, 8)
-    .map((item) => (item.quantity ? `${item.title} - ${item.quantity}` : item.title));
+    .slice(0, 6)
+    .map((item) => ({
+      id: item.id,
+      text: item.quantity ? `${item.title} - ${item.quantity}` : item.title,
+    }));
+}
+
+function normalizeItems(value: unknown): WidgetListItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === "string") {
+        const text = item.trim();
+        if (!text) return null;
+        return { id: text, text } satisfies WidgetListItem;
+      }
+
+      if (!item || typeof item !== "object") return null;
+      const id = typeof (item as { id?: unknown }).id === "string" ? (item as { id: string }).id.trim() : "";
+      const text =
+        typeof (item as { text?: unknown }).text === "string"
+          ? (item as { text: string }).text.trim()
+          : "";
+
+      if (!id || !text) return null;
+      return { id, text } satisfies WidgetListItem;
+    })
+    .filter((item): item is WidgetListItem => item !== null);
 }
 
 async function loadPayload(): Promise<WidgetPayload> {
   const raw = await AsyncStorage.getItem(KEY);
   if (!raw) return { ...EMPTY_PAYLOAD };
   try {
-    const parsed = JSON.parse(raw) as WidgetPayload;
+    const parsed = JSON.parse(raw) as Partial<WidgetPayload>;
     return {
-      shopping: Array.isArray(parsed.shopping) ? parsed.shopping : [],
-      medicines: Array.isArray(parsed.medicines) ? parsed.medicines : [],
+      householdId: typeof parsed.householdId === "string" ? parsed.householdId : null,
+      shopping: normalizeItems(parsed.shopping),
+      medicines: normalizeItems(parsed.medicines),
       updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
     };
   } catch {
@@ -76,20 +122,26 @@ async function persistPayload(payload: WidgetPayload) {
   }
 }
 
-export async function syncWidgetMedicines(input: Medicine[], memberNamesByUid?: Record<string, string>) {
+export async function syncWidgetMedicines(
+  householdId: string,
+  input: Medicine[],
+  memberNamesByUid?: Record<string, string>
+) {
   const prev = await loadPayload();
   await persistPayload({
     ...prev,
-    medicines: medicineLines(input, memberNamesByUid),
+    householdId,
+    medicines: medicineItems(input, memberNamesByUid),
     updatedAt: Date.now(),
   });
 }
 
-export async function syncWidgetShopping(input: ShoppingItem[]) {
+export async function syncWidgetShopping(householdId: string, input: ShoppingItem[]) {
   const prev = await loadPayload();
   await persistPayload({
     ...prev,
-    shopping: shoppingLines(input),
+    householdId,
+    shopping: shoppingItems(input),
     updatedAt: Date.now(),
   });
 }

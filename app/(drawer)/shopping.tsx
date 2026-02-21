@@ -72,7 +72,10 @@ export default function ShoppingScreen() {
 
     setShopping(shoppingList);
     setMedicines(medicineList);
-    await Promise.all([syncWidgetShopping(shoppingList), syncWidgetMedicines(medicineList, namesByUid)]);
+    await Promise.all([
+      syncWidgetShopping(householdId, shoppingList),
+      syncWidgetMedicines(householdId, medicineList, namesByUid),
+    ]);
   }, [householdId]);
 
   React.useEffect(() => {

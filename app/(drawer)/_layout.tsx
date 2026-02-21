@@ -1,16 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
+import {
+  DrawerContentComponentProps,
+  DrawerContentScrollView,
+  DrawerItemList,
+} from "@react-navigation/drawer";
 import { Redirect } from "expo-router";
 import { Drawer } from "expo-router/drawer";
 import * as React from "react";
-import { ActivityIndicator, View } from "react-native";
-import { useAuth } from "../../src/entities/session/model/use-auth";
+import { ActivityIndicator, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHousehold } from "../../src/entities/session/model/use-household";
 import { useLanguage } from "../../src/i18n/LanguageProvider";
 import { useAppTheme } from "../../src/theme/ThemeProvider";
 
 export default function DrawerLayout() {
+  const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useHousehold();
   const { t } = useLanguage();
+  const hasSubscription = profile?.subscriptionActive === true;
 
   if (loading) {
     return (
@@ -33,6 +41,29 @@ export default function DrawerLayout() {
 
   return (
     <Drawer
+      drawerContent={(props: DrawerContentComponentProps) => (
+        <View style={{ flex: 1, backgroundColor: colors.card }}>
+          <DrawerContentScrollView
+            {...props}
+            contentContainerStyle={{ paddingTop: Math.max(insets.top - 8, 0), paddingBottom: 8 }}
+          >
+            <DrawerItemList {...props} />
+          </DrawerContentScrollView>
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingTop: 10,
+              paddingBottom: Math.max(insets.bottom, 12),
+              borderTopWidth: 1,
+              borderTopColor: colors.border,
+            }}
+          >
+            <Text style={{ color: colors.muted, fontSize: 12, fontWeight: "700" }}>
+              developed by Damir
+            </Text>
+          </View>
+        </View>
+      )}
       screenOptions={{
         headerStyle: { backgroundColor: colors.card },
         headerTintColor: colors.text,
@@ -67,12 +98,20 @@ export default function DrawerLayout() {
         }}
       />
       <Drawer.Screen
+        name="stats"
+        options={{
+          title: t("drawer.stats.title"),
+          drawerLabel: t("drawer.stats.label"),
+          drawerIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" size={size} color={color} />,
+        }}
+      />
+      <Drawer.Screen
         name="assistant"
         options={{
           title: t("drawer.assistant.title"),
           drawerLabel: t("drawer.assistant.label"),
           drawerIcon: ({ color, size }) => (
-            <Ionicons name="sparkles-outline" size={size} color={color} />
+            <Ionicons name={hasSubscription ? "sparkles-outline" : "lock-closed-outline"} size={size} color={color} />
           ),
         }}
       />
@@ -82,7 +121,11 @@ export default function DrawerLayout() {
           title: t("drawer.chat.title"),
           drawerLabel: t("drawer.chat.label"),
           drawerIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
+            <Ionicons
+              name={hasSubscription ? "chatbubble-ellipses-outline" : "lock-closed-outline"}
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
@@ -119,6 +162,13 @@ export default function DrawerLayout() {
       />
       <Drawer.Screen
         name="medicine/[id]"
+        options={{
+          title: t("drawer.medicine.edit"),
+          drawerItemStyle: { display: "none" },
+        }}
+      />
+      <Drawer.Screen
+        name="medicine/upsert"
         options={{
           title: t("drawer.medicine.edit"),
           drawerItemStyle: { display: "none" },
