@@ -247,7 +247,7 @@ export default function HomeScreen() {
       Alert.alert(
         t("common.error"),
         language === "ru"
-          ? "Р­С‚Рѕ Р»РµРєР°СЂСЃС‚РІРѕ СЃРµРіРѕРґРЅСЏ РЅР°Р·РЅР°С‡РµРЅРѕ РґСЂСѓРіРѕРјСѓ С‡Р»РµРЅСѓ СЃРµРјСЊРё."
+          ? "Это лекарство сегодня назначено другому члену семьи."
           : "This medicine is assigned to another family member today."
       );
       return false;
@@ -367,7 +367,7 @@ export default function HomeScreen() {
 
     const amount = Number(quantityValue.replace(",", "."));
     if (!Number.isFinite(amount) || amount <= 0) {
-      Alert.alert(t("auth.checkInput"), language === "ru" ? "Р’РІРµРґРёС‚Рµ РєРѕСЂСЂРµРєС‚РЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ." : "Enter valid amount.");
+      Alert.alert(t("auth.checkInput"), language === "ru" ? "Введите корректное количество." : "Enter valid amount.");
       return;
     }
 
@@ -387,7 +387,7 @@ export default function HomeScreen() {
       Alert.alert(
         t("auth.checkInput"),
         language === "ru"
-          ? `РќРµР»СЊР·СЏ СЃРїРёСЃР°С‚СЊ Р±РѕР»СЊС€Рµ, С‡РµРј РµСЃС‚СЊ СЃРµР№С‡Р°СЃ (${currentQuantity ?? 0}).`
+          ? `Нельзя списать больше, чем есть сейчас (${currentQuantity ?? 0}).`
           : `Cannot decrement more than current quantity (${currentQuantity ?? 0}).`
       );
       return;
@@ -406,7 +406,7 @@ export default function HomeScreen() {
             Alert.alert(
               t("common.error"),
               language === "ru"
-                ? "Р­С‚Рѕ Р»РµРєР°СЂСЃС‚РІРѕ СЃРµРіРѕРґРЅСЏ РЅР°Р·РЅР°С‡РµРЅРѕ РґСЂСѓРіРѕРјСѓ С‡Р»РµРЅСѓ СЃРµРјСЊРё."
+                ? "Это лекарство сегодня назначено другому члену семьи."
                 : "This medicine is assigned to another family member today."
             );
             return;
@@ -924,10 +924,10 @@ export default function HomeScreen() {
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               {quantityAction === "add"
                 ? language === "ru"
-                  ? "Р”РѕР±Р°РІРёС‚СЊ РєРѕР»РёС‡РµСЃС‚РІРѕ"
+                  ? "Добавить количество"
                   : "Add quantity"
                 : language === "ru"
-                  ? "РЎРїРёСЃР°С‚СЊ РєРѕР»РёС‡РµСЃС‚РІРѕ"
+                  ? "Списать количество"
                   : "Decrement amount"}
             </Text>
             <Text style={[styles.modalSubtitle, { color: colors.muted }]}>
@@ -935,7 +935,7 @@ export default function HomeScreen() {
             </Text>
             <Text style={[styles.modalSubtitle, { color: colors.muted }]}>
               {language === "ru"
-                ? `РЎРµР№С‡Р°СЃ: ${
+                ? `Сейчас: ${
                     typeof quantityTargetMedicine?.quantityValue === "number"
                       ? quantityTargetMedicine.quantityValue
                       : parseQuantity(quantityTargetMedicine?.quantity) ?? 0
@@ -951,7 +951,7 @@ export default function HomeScreen() {
               value={quantityValue}
               onChangeText={setQuantityValue}
               keyboardType="decimal-pad"
-              placeholder={language === "ru" ? "Р’РІРµРґРёС‚Рµ РєРѕР»РёС‡РµСЃС‚РІРѕ" : "Enter amount"}
+              placeholder={language === "ru" ? "Введите количество" : "Enter amount"}
               placeholderTextColor="rgba(120,120,120,0.55)"
               style={[
                 styles.qtyInput,
@@ -984,10 +984,10 @@ export default function HomeScreen() {
                 <Text style={[styles.qtyBtnText, { color: colors.text }]}>
                   {quantityAction === "add"
                     ? language === "ru"
-                      ? "Р”РѕР±Р°РІРёС‚СЊ"
+                      ? "Добавить"
                       : "Add"
                     : language === "ru"
-                      ? "РЎРїРёСЃР°С‚СЊ"
+                      ? "Списать"
                       : "Apply"}
                 </Text>
               </Pressable>
